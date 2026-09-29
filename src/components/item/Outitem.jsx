@@ -1,0 +1,3257 @@
+import { useState, useEffect, useMemo } from "react";
+import { FaSearch, FaTrash } from "react-icons/fa";
+import API from "../../api/api";
+
+
+const C = {
+  panelBorder: "#c2d7e8",
+  bar: "#0f3c52",
+  barText: "#eaf3f9",
+  navy: "#0b2f3f",
+  sub: "#5c778a",
+  inputBorder: "#b7c8d6",
+  inputBg: "#ffffff",
+  danger: "#c0392b",
+  dangerBg: "#fdeceb",
+  tableHead: "#0f3c52",
+  rowAlt: "#f4f7fa",
+  tabIdleBg: "#eef2f5",
+};
+
+// >>> MODULE-SPECIFIC: config
+const MODULE = {
+  name: "out",
+  messageType: "OUTDEC",
+  saveEndpoint: "out/postOutItemWithCasc/",
+  controlledKey: "Out", // field on the HS-code master row that marks a controlled item
+  dgAsYesNo: true, // DGIndicator sent as "Yes"/"No"
+  chkUnitAsBoolean: true, // ChkUnitPrice sent as a real boolean
+  requireBrand: false, // Out does not require Brand
+  hasTaxTable: false, // no GST / Excise / Customs / Other tax
+  hasOutHawb: true,
+  hasEndUserDescription: true, // End User Description per CASC box
+};
+// <<< MODULE-SPECIFIC: config
+
+// >>> MODULE-SPECIFIC: mirrorAfterDelete
+// Runs after /deleteItem/ (common table) succeeded — re-syncs this module's table.
+async function mirrorAfterDelete(permitId) {
+  await API.post("out/syncOutItemFromCommon/", { PermitId: permitId });
+}
+// <<< MODULE-SPECIFIC: mirrorAfterDelete
+
+function fmt(val, decimals = 2) {
+  const num = parseFloat(val);
+  return isNaN(num) ? (0).toFixed(decimals) : num.toFixed(decimals);
+}
+
+function normalizeSelectPlaceholders(payload) {
+  const fixed = { ...payload };
+  Object.keys(fixed).forEach((key) => {
+    const v = fixed[key];
+    if (typeof v === "string" && v.trim().toUpperCase() === "--SELECT--") {
+      fixed[key] = "--Select--";
+    }
+  });
+  return fixed;
+}
+
+// ---------------------------------------------------------------------------
+// Master data (cached)
+// ---------------------------------------------------------------------------
+
+function makeCachedListHook(endpoint) {
+  const cache = { list: null };
+  return function useCachedList() {
+    const [list, setList] = useState(() => cache.list || []);
+    useEffect(() => {
+      if (cache.list) {
+        setList(cache.list);
+        return;
+      }
+      let cancelled = false;
+      API.get(endpoint)
+        .then((res) => {
+          cache.list = res.data || [];
+          if (!cancelled) setList(cache.list);
+        })
+        .catch((err) => console.error(`Error fetching ${endpoint}`, err));
+      return () => {
+        cancelled = true;
+      };
+    }, []);
+    return list;
+  };
+}
+
+const useHsCodeSuggestions = makeCachedListHook("/getCommonHsCodeTableInfo/");
+const useTotalOuterPackOptions = makeCachedListHook(
+  "/getTotalOuterPackFromCommonMaster/",
+);
+const useVehicleTypeOptions = makeCachedListHook(
+  "/getVehicalTypeFromCommonMaster/",
+);
+const useEngineCapacityOptions = makeCachedListHook(
+  "/getEngineCapacityFromCommonMaster/",
+);
+const usePreferentialOptions = makeCachedListHook(
+  "/getPreferntialFromCommonMaster/",
+);
+const useMakingLotOptions = makeCachedListHook(
+  "/getMakingLotFromCommonMaster/",
+);
+const useCurrencyOptions = makeCachedListHook("/getCommonCurrencyTableInfo/");
+
+const countryCache = { list: null };
+function useCountrySuggestions() {
+  const [list, setList] = useState(() => countryCache.list || []);
+  useEffect(() => {
+    if (countryCache.list) {
+      setList(countryCache.list);
+      return;
+    }
+    let cancelled = false;
+    API.get("/getCommonCountryTableInfo/")
+      .then((res) => {
+        const data = (res.data || []).map(
+          (i) => `${i.CountryCode}:${i.Description}`,
+        );
+        countryCache.list = data;
+        if (!cancelled) setList(data);
+      })
+      .catch((err) => console.error("Error fetching country list", err));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return list;
+}
+
+// ---------------------------------------------------------------------------
+// Blank shapes
+// ---------------------------------------------------------------------------
+
+function blankCascBox() {
+  return {
+    code: "",
+    hsQuantity: 0,
+    uom: "",
+    enduserDescription: "",
+    casc: [["", "", ""]],
+  };
+}
+
+// >>> MODULE-SPECIFIC: blankExtras
+// Certificate of Origin draft fields (Out only).
+const MODULE_BLANK_EXTRAS = {
+  CerDescription: "",
+  CerItemQty: "",
+  CerItemUOM: "",
+  CifCerValue: "",
+  ManuDate: "",
+  TextileCategory: "",
+  TextileQuotaQty: "",
+  TextileQuotaUOM: "",
+  CerInvNo: "",
+  CerInvDate: "",
+  OriginCriterion1: "",
+  OriginCriterion2: "",
+  OriginCriterion3: "",
+  HsCodeCer: "",
+  PercentageOrigin: "",
+};
+// <<< MODULE-SPECIFIC: blankExtras
+
+function blankItem() {
+  return {
+    HSCode: "",
+    Description: "",
+    DGIndicator: false,
+    Unbranded: false,
+    Brand: "",
+    Model: "",
+    Country: "",
+    CountryDescription: "",
+    Hawb: "",
+    OutHawb: "",
+
+    ShowVehicle: false,
+    ShowPacking: false,
+    ShowAlcohol: false,
+    ShowDutiableQuantity: false,
+    ShowOptionalCharges: false,
+    ShowItemCasc: false,
+    IsControlled: false,
+    DutyTypeId: "",
+    KgmVisible: "",
+    CorrectUom: "",
+
+    DutiableQty: "",
+    DutiableUOM: "",
+    TotalDutiableQty: "",
+    TotalDutiableUOM: "",
+    InvoiceQuantity: "",
+    HSQty: "",
+    HSUOM: "",
+    AlcoholPercentage: "",
+
+    InvoiceNo: "",
+    ChkUnitPrice: false,
+    UnitPrice: "",
+    UnitPriceCurrency: "",
+    ExchangeRate: "",
+    SumExchangeRate: "0.00",
+    TotalLineAmount: "",
+    InvoiceCharges: "0.00",
+    CIFFOB: "0.00",
+
+    VehicleType: "",
+    EngineCapacity: "",
+    EngineCapacityUOM: "",
+    OriginalRegDate: "",
+
+    PreferentialCode: "",
+    GSTRate: 9,
+    GSTUOM: "PER",
+    GSTAmount: "",
+    GSTRecalculate: false,
+    ExciseDutyRate: 0,
+    ExciseDutyUOM: "",
+    ExciseDutyAmount: "",
+    CustomsDutyRate: 0,
+    CustomsDutyUOM: "",
+    CustomsDutyAmount: "",
+    OtherTaxRate: "",
+    OtherTaxUOM: "",
+    OtherTaxAmount: "",
+    LastSellingPrice: "",
+
+    PackingChecked: false,
+    OPQty: "0.00",
+    OPUOM: "",
+    IPQty: "0.00",
+    IPUOM: "",
+    InPQty: "0.00",
+    InPUOM: "",
+    ImPQty: "0.00",
+    ImPUOM: "",
+
+    ItemCascChecked: false,
+    ItemCasc: [blankCascBox(), blankCascBox(), blankCascBox()],
+
+    ShowShippingMarks: false,
+    ShippingMarks1: "",
+    ShippingMarks2: "",
+    ShippingMarks3: "",
+    ShippingMarks4: "",
+
+    ShowLotId: false,
+    CurrentLot: "",
+    Making: "",
+    PreviousLot: "",
+
+    OptionalCurrency: "",
+    OptionalRate: "",
+    OptionalAmountInput: "",
+    OptionalCharges: "",
+
+    ...MODULE_BLANK_EXTRAS,
+  };
+}
+
+function parseFlag(v) {
+  if (v === true || v === 1 || v === "1") return true;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    return s === "true" || s === "yes";
+  }
+  return false;
+}
+
+// >>> MODULE-SPECIFIC: hsLogic
+// What happens when an HS code is picked: which sections show, default UOMs and
+// excise / customs defaults.
+function computeHsLogicFields(hsRow) {
+  if (!hsRow) return null;
+  const {
+    HSCode,
+    UOM,
+    DUTYTYPID: RawDutyTypeId,
+    Kgmvisible,
+    DuitableUom,
+    Excisedutyuom,
+    Excisedutyrate,
+    Customsdutyuom,
+    Customsdutyrate,
+  } = hsRow;
+
+  const DUTYTYPID = Number(RawDutyTypeId);
+  const controlled = String(hsRow[MODULE.controlledKey]) === "1";
+
+  const patch = {
+    DutyTypeId: DUTYTYPID,
+    KgmVisible: Kgmvisible,
+    IsControlled: controlled,
+
+    ShowVehicle: false,
+    ShowPacking: false,
+    ShowAlcohol: false,
+    ShowDutiableQuantity: false,
+    ShowOptionalCharges: false,
+
+    HSUOM: UOM || "--Select--",
+    CorrectUom: UOM || "",
+    DutiableUOM: UOM || "",
+    TotalDutiableUOM: DuitableUom || "",
+
+    ExciseDutyRate: 0,
+    ExciseDutyUOM: "",
+    CustomsDutyRate: 0,
+    CustomsDutyUOM: "0.00",
+
+    ItemCascChecked: controlled,
+    ShowItemCasc: controlled,
+  };
+
+  const applyDutyDefaults = () => {
+    // Out: no excise / customs — always cleared
+    patch.ExciseDutyUOM = "--Select--";
+    patch.CustomsDutyUOM = "--Select--";
+    patch.ExciseDutyRate = 0;
+    patch.CustomsDutyRate = 0;
+  };
+
+  if (DUTYTYPID === 62 || DUTYTYPID === 63) {
+    if (DUTYTYPID === 62 && UOM === "LTR") {
+      patch.ShowDutiableQuantity = true;
+      patch.ShowAlcohol = true;
+      patch.ShowPacking = true;
+      patch.PackingChecked = true;
+    } else if (
+      (DUTYTYPID === 63 && UOM === "KGM") ||
+      (DUTYTYPID === 62 && UOM !== "LTR")
+    ) {
+      patch.ShowDutiableQuantity = true;
+    } else {
+      patch.ShowDutiableQuantity = true;
+      patch.ShowAlcohol = true;
+      patch.ShowPacking = true;
+      patch.PackingChecked = true;
+    }
+    if (DuitableUom === "A") patch.DutiableUOM = "--Select--";
+    applyDutyDefaults();
+  } else if (DUTYTYPID === 64) {
+    if (UOM !== "LTR") {
+      patch.ShowDutiableQuantity = true;
+      patch.ShowAlcohol = false;
+    } else {
+      patch.ShowDutiableQuantity = true;
+      patch.ShowAlcohol = true;
+      patch.ShowPacking = true;
+      patch.PackingChecked = true;
+    }
+    if (DuitableUom === "A") patch.DutiableUOM = "--Select--";
+    applyDutyDefaults();
+  } else if (DUTYTYPID === 61 || DUTYTYPID === 67) {
+    if (UOM === "LTR") {
+      patch.ShowDutiableQuantity = true;
+      patch.ShowAlcohol = true;
+      patch.ShowPacking = true;
+      patch.PackingChecked = true;
+    } else if (UOM === "KGM") {
+      patch.ShowDutiableQuantity = true;
+      patch.ShowAlcohol = false;
+    } else {
+      patch.ShowDutiableQuantity = false;
+      patch.ShowAlcohol = false;
+    }
+    applyDutyDefaults();
+  } else {
+    patch.DutiableUOM = "--Select--";
+    patch.TotalDutiableUOM = "--Select--";
+  }
+
+  if (HSCode && HSCode.startsWith("87")) {
+    patch.ShowVehicle = true;
+    patch.ShowDutiableQuantity = true;
+    patch.ShowOptionalCharges = true;
+    applyDutyDefaults();
+    patch.DutiableUOM = UOM;
+    patch.TotalDutiableUOM = DuitableUom;
+  }
+
+  return patch;
+}
+// <<< MODULE-SPECIFIC: hsLogic
+
+// >>> MODULE-SPECIFIC: calcCif
+// Out: no invoice-level charges. Line Amount x Ex.Rate is both the
+// "Total Invoice Charge" and the CIF/FOB (same as the legacy Out page).
+function calcCif(item) {
+  const total =
+    (Number(item.TotalLineAmount) || 0) * (Number(item.ExchangeRate) || 0);
+  return { invoiceCharge: total, cif: total };
+}
+// <<< MODULE-SPECIFIC: calcCif
+
+// >>> MODULE-SPECIFIC: calcTaxes
+// Out has no taxes (the tax effect is skipped because MODULE.hasTaxTable is false).
+function calcTaxes() {
+  return {};
+}
+// <<< MODULE-SPECIFIC: calcTaxes
+
+// >>> MODULE-SPECIFIC: extras
+function toDisplayDate(v) {
+  const m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : v || "";
+}
+
+function isTextileCo(data) {
+  const k = Object.keys(data || {}).find(
+    (x) => x.toLowerCase().replace(/[^a-z0-9]/g, "") === "cotype",
+  );
+  return k ? /textile/i.test(String(data[k] || "")) : false;
+}
+
+// Out: tax fields are always 0, plus the Certificate of Origin columns.
+function moduleExtraPayload(item) {
+  return {
+    GSTUOM: "",
+    GSTAmount: 0,
+    ExciseDutyRate: 0,
+    ExciseDutyUOM: "",
+    ExciseDutyAmount: 0,
+    CustomsDutyRate: 0,
+    CustomsDutyUOM: "",
+    CustomsDutyAmount: 0,
+    OtherTaxRate: 0,
+    OtherTaxUOM: "",
+    OtherTaxAmount: 0,
+
+    CerItemQty: item.CerItemQty || 0,
+    CerItemUOM: item.CerItemUOM || "",
+    CIFValOfCer: item.CifCerValue || 0,
+    ManufactureCostDate: item.ManuDate || "",
+    TexCat: item.TextileCategory || "",
+    TexQuotaQty: item.TextileQuotaQty || 0,
+    TexQuotaUOM: item.TextileQuotaUOM || "",
+    CerInvNo: item.CerInvNo || "",
+    CerInvDate: item.CerInvDate || "",
+    OriginOfCer: [item.OriginCriterion1, item.OriginCriterion2, item.OriginCriterion3]
+      .map((s) => (s || "").trim())
+      .filter(Boolean)
+      .join(","),
+    HSCodeCer: item.HsCodeCer || "",
+    PerContent: item.PercentageOrigin || "",
+    CertificateDescription: item.CerDescription || "",
+  };
+}
+
+function moduleEditExtras(raw) {
+  const parts = String(raw.OriginOfCer || "")
+    .split(",")
+    .map((s) => s.trim());
+  return {
+    CerItemQty: fmt(raw.CerItemQty, 2),
+    CerItemUOM: raw.CerItemUOM || "",
+    CifCerValue: fmt(raw.CIFValOfCer, 2),
+    ManuDate: toDisplayDate(raw.ManufactureCostDate),
+    TextileCategory: raw.TexCat || "",
+    TextileQuotaQty: fmt(raw.TexQuotaQty, 2),
+    TextileQuotaUOM: raw.TexQuotaUOM || "",
+    CerInvNo: raw.CerInvNo || "",
+    CerInvDate: toDisplayDate(raw.CerInvDate),
+    OriginCriterion1: parts[0] || "",
+    OriginCriterion2: parts[1] || "",
+    OriginCriterion3: parts[2] || "",
+    HsCodeCer: raw.HSCodeCer || "",
+    PercentageOrigin: raw.PerContent || "",
+    CerDescription: raw.CertificateDescription || "",
+  };
+}
+
+// Where the Out HAWB/HBL list comes from in the declaration data.
+function getOutHawbString(data) {
+  const k = Object.keys(data || {}).find((x) =>
+    ["outhawb", "outcargohawb", "outhawbobl"].includes(
+      x.toLowerCase().replace(/[^a-z0-9]/g, ""),
+    ),
+  );
+  return k ? data[k] : "";
+}
+
+// Certificate of Origin section — shown only when the header has it switched on.
+function renderModuleSections({ item, set, packUomOptions, ctx }) {
+  const data = ctx?.data || {};
+  if (!data.CertificateOfOrigin) return null;
+  const showTextile = isTextileCo(data);
+  const inp = (key, label, extra = {}) => (
+    <Field label={label} key={key}>
+      <EditableInput
+        value={item[key]}
+        onChange={(v) => set(key, v)}
+        {...extra}
+      />
+    </Field>
+  );
+
+  return (
+    <ItemSection title="Certificate of Origin">
+      <Field label="Certificate Description">
+        <textarea
+          value={item.CerDescription ?? ""}
+          onChange={(e) => set("CerDescription", e.target.value.toUpperCase())}
+          style={{
+            border: `1px solid ${C.inputBorder}`,
+            borderRadius: 4,
+            padding: "7px 9px",
+            fontSize: 12,
+            color: C.navy,
+            width: "100%",
+            minHeight: 80,
+            resize: "vertical",
+            boxSizing: "border-box",
+            fontFamily: "inherit",
+          }}
+        />
+      </Field>
+      <div style={{ marginTop: 10 }}>
+        <Grid cols={2}>
+          <Field label="Certificate Item Quantity">
+            <div style={{ display: "flex", gap: 6 }}>
+              <EditableInput
+                value={item.CerItemQty}
+                onChange={(v) => set("CerItemQty", v)}
+                placeholder="0.00"
+              />
+              <EditableSelect
+                value={item.CerItemUOM}
+                onChange={(v) => set("CerItemUOM", v)}
+                options={packUomOptions}
+              />
+            </div>
+          </Field>
+          {inp("CifCerValue", "CIF/FOB Item Value On Certificate", { placeholder: "0.00" })}
+          {inp("ManuDate", "Manufacturing Cost Date", { placeholder: "DD/MM/YYYY", upper: false })}
+          {inp("CerInvNo", "Invoice Number")}
+          {inp("CerInvDate", "Invoice Date", { placeholder: "DD/MM/YYYY", upper: false })}
+          {inp("HsCodeCer", "HS Code On Certificate")}
+          {inp("PercentageOrigin", "Percentage Content Of Origin Criterion")}
+        </Grid>
+      </div>
+      <div style={{ marginTop: 10 }}>
+        <Grid cols={3}>
+          {inp("OriginCriterion1", "Origin Criterion Code 1")}
+          {inp("OriginCriterion2", "Origin Criterion Code 2")}
+          {inp("OriginCriterion3", "Origin Criterion Code 3")}
+        </Grid>
+      </div>
+      {showTextile && (
+        <div style={{ marginTop: 10 }}>
+          <Grid cols={2}>
+            {inp("TextileCategory", "Textile Category")}
+            <Field label="Textile Quota Quantity">
+              <div style={{ display: "flex", gap: 6 }}>
+                <EditableInput
+                  value={item.TextileQuotaQty}
+                  onChange={(v) => set("TextileQuotaQty", v)}
+                  placeholder="0.00"
+                />
+                <EditableSelect
+                  value={item.TextileQuotaUOM}
+                  onChange={(v) => set("TextileQuotaUOM", v)}
+                  options={packUomOptions}
+                />
+              </div>
+            </Field>
+          </Grid>
+        </div>
+      )}
+    </ItemSection>
+  );
+}
+// <<< MODULE-SPECIFIC: extras
+
+// ---------------------------------------------------------------------------
+// Small UI atoms
+// ---------------------------------------------------------------------------
+
+function EditableInput({
+  value,
+  onChange,
+  placeholder,
+  compact = true,
+  disabled,
+  onBlur,
+  onFocus,
+  onKeyDown,
+  type = "text",
+  upper = true,
+}) {
+  return (
+    <input
+      type={type}
+      value={value ?? ""}
+      placeholder={placeholder ?? ""}
+      disabled={disabled}
+      onChange={(e) =>
+        onChange &&
+        onChange(upper ? e.target.value.toUpperCase() : e.target.value)
+      }
+      onBlur={onBlur}
+      onFocus={onFocus}
+      onKeyDown={onKeyDown}
+      style={{
+        border: `1px solid ${C.inputBorder}`,
+        borderRadius: 4,
+        padding: compact ? "5px 7px" : "7px 9px",
+        fontSize: compact ? 11.5 : 13,
+        color: disabled ? C.sub : C.navy,
+        background: disabled ? C.tabIdleBg : C.inputBg,
+        outline: "none",
+        width: "100%",
+        boxSizing: "border-box",
+        fontFamily: "inherit",
+      }}
+    />
+  );
+}
+
+function EditableSelect({ value, onChange, options, disabled }) {
+  return (
+    <select
+      value={value ?? ""}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value)}
+      style={{
+        border: `1px solid ${C.inputBorder}`,
+        borderRadius: 4,
+        padding: "5px 6px",
+        fontSize: 11.5,
+        color: C.navy,
+        background: disabled ? C.tabIdleBg : C.inputBg,
+        width: "100%",
+        boxSizing: "border-box",
+        fontFamily: "inherit",
+      }}
+    >
+      <option value="">--Select--</option>
+      {value && !options.includes(value) && (
+        <option value={value}>{value}</option>
+      )}
+      {options.map((o) => (
+        <option key={o} value={o}>
+          {o}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function Field({ label, children, error }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <span
+        style={{
+          color: C.sub,
+          fontWeight: 700,
+          fontSize: 10.5,
+          letterSpacing: 0.3,
+        }}
+      >
+        {label}
+      </span>
+      {children}
+      {error && (
+        <span style={{ color: C.danger, fontSize: 10, fontWeight: 700 }}>
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function Grid({ cols = 2, children }) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${cols}, 1fr)`,
+        gap: "10px 12px",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ItemSection({ title, children, extra }) {
+  return (
+    <div
+      style={{
+        border: `1px solid ${C.panelBorder}`,
+        borderRadius: 8,
+        padding: 12,
+        background: "#fafcfd",
+        marginBottom: 12,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 10,
+        }}
+      >
+        <span
+          style={{
+            color: C.navy,
+            fontWeight: 800,
+            fontSize: 11.5,
+            letterSpacing: 0.4,
+            textTransform: "uppercase",
+          }}
+        >
+          {title}
+        </span>
+        {extra}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Checkbox({ checked, onChange, label }) {
+  return (
+    <label
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        fontSize: 11.5,
+        color: C.navy,
+        fontWeight: 600,
+        cursor: "pointer",
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={!!checked}
+        onChange={(e) => onChange(e.target.checked)}
+        style={{ width: 15, height: 15, accentColor: C.bar }}
+      />
+      {label}
+    </label>
+  );
+}
+
+function AddBtn({ onClick, label }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        border: `1.5px dashed ${C.bar}`,
+        background: "transparent",
+        color: C.bar,
+        fontWeight: 700,
+        fontSize: 12,
+        padding: "6px 12px",
+        borderRadius: 6,
+        cursor: "pointer",
+        marginTop: 6,
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function SearchPopup({ title, data = [], onClose, onSelect, columns }) {
+  const [search, setSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const rowsPerPage = 5;
+
+  const filteredData = useMemo(
+    () =>
+      data.filter((item) =>
+        Object.values(item)
+          .join(" ")
+          .toLowerCase()
+          .includes(search.toLowerCase()),
+      ),
+    [search, data],
+  );
+
+  const totalPages = Math.ceil(filteredData.length / rowsPerPage);
+  const startIndex = (currentPage - 1) * rowsPerPage;
+  const endIndex = startIndex + rowsPerPage;
+  const paginatedData = filteredData.slice(startIndex, endIndex);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
+
+  const pageBtn = (disabled) => ({
+    border: `1px solid ${C.inputBorder}`,
+    background: "#fff",
+    borderRadius: 4,
+    padding: "5px 12px",
+    cursor: disabled ? "not-allowed" : "pointer",
+  });
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.5)",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        zIndex: 1000,
+      }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div
+        style={{
+          background: "#fff",
+          padding: 20,
+          borderRadius: 6,
+          width: 700,
+          maxHeight: "80%",
+          overflowY: "auto",
+        }}
+      >
+        <h4 style={{ margin: "0 0 10px", color: C.navy }}>{title}</h4>
+        <input
+          type="text"
+          placeholder={`Search ${title}...`}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{
+            width: "100%",
+            padding: "7px 9px",
+            border: `1px solid ${C.inputBorder}`,
+            borderRadius: 4,
+            marginBottom: 10,
+            boxSizing: "border-box",
+            fontSize: 12.5,
+          }}
+        />
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead>
+            <tr>
+              {columns.map((col) => (
+                <th
+                  key={col}
+                  style={{
+                    background: C.tableHead,
+                    color: "#fff",
+                    padding: "6px 8px",
+                    textAlign: "left",
+                    fontSize: 10.5,
+                  }}
+                >
+                  {col}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {paginatedData.map((item, idx) => (
+              <tr
+                key={idx}
+                onClick={() => onSelect(item)}
+                style={{ cursor: "pointer" }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = C.rowAlt)}
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.background = "transparent")
+                }
+              >
+                {columns.map((col) => (
+                  <td
+                    key={col}
+                    style={{
+                      padding: "6px 8px",
+                      borderBottom: `1px solid ${C.panelBorder}`,
+                    }}
+                  >
+                    {item[col]}
+                  </td>
+                ))}
+              </tr>
+            ))}
+            {paginatedData.length === 0 && (
+              <tr>
+                <td
+                  colSpan={columns.length}
+                  style={{ textAlign: "center", padding: 14, color: C.sub }}
+                >
+                  No records found
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginTop: 10,
+            fontSize: 12,
+            color: C.sub,
+          }}
+        >
+          <span>
+            Showing {filteredData.length === 0 ? 0 : startIndex + 1} to{" "}
+            {Math.min(endIndex, filteredData.length)} of {filteredData.length}{" "}
+            entries
+          </span>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => currentPage > 1 && setCurrentPage(currentPage - 1)}
+              disabled={currentPage === 1}
+              style={pageBtn(currentPage === 1)}
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                currentPage < totalPages && setCurrentPage(currentPage + 1)
+              }
+              disabled={currentPage === totalPages || totalPages === 0}
+              style={pageBtn(currentPage === totalPages || totalPages === 0)}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          style={{ ...pageBtn(false), marginTop: 12, padding: "6px 14px" }}
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}
+
+async function fetchProductCodePopupData(hsCode, setPopupData) {
+  try {
+    const url = hsCode
+      ? `/getCascProductCodes/?HSCode=${hsCode}`
+      : `/getCascProductCodes/`;
+    const response = await API.get(url);
+    setPopupData(response.data || []);
+  } catch (err) {
+    console.error("Failed to fetch product code popup data", err);
+    setPopupData([]);
+  }
+}
+
+function ItemNumberBadge({ number, active, onClick, controlled, pending }) {
+  const borderColor = controlled
+    ? C.danger
+    : pending
+      ? "#c98a12"
+      : active
+        ? C.bar
+        : C.panelBorder;
+  const background = active
+    ? pending
+      ? "#c98a12"
+      : C.bar
+    : controlled
+      ? C.dangerBg
+      : pending
+        ? "#fff6e0"
+        : "#fff";
+  const color = active
+    ? "#fff"
+    : controlled
+      ? C.danger
+      : pending
+        ? "#946200"
+        : C.navy;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={
+        controlled
+          ? "Controlled item"
+          : pending
+            ? "Pending import — click to review"
+            : undefined
+      }
+      style={{
+        width: 34,
+        height: 34,
+        borderRadius: "50%",
+        border: `1.5px solid ${borderColor}`,
+        background,
+        color,
+        fontWeight: 800,
+        fontSize: 12.5,
+        cursor: "pointer",
+        flexShrink: 0,
+      }}
+    >
+      {number}
+    </button>
+  );
+}
+
+function HsCodeInput({ value, onChangeText, onSelect, onBlurResolve }) {
+  const suggestions = useHsCodeSuggestions();
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [filtered, setFiltered] = useState([]);
+  const [highlighted, setHighlighted] = useState(0);
+
+  const runFilter = (val) => {
+    if (!val) {
+      setShowDropdown(false);
+      setFiltered([]);
+      return;
+    }
+    const matches = suggestions.filter(
+      (i) =>
+        i.HSCode?.toLowerCase().startsWith(val.toLowerCase()) ||
+        i.Description?.toLowerCase().includes(val.toLowerCase()),
+    );
+    const exact = matches.filter(
+      (i) => i.HSCode?.toLowerCase() === val.toLowerCase(),
+    );
+    const finalList = exact.length > 0 ? exact : matches.slice(0, 100);
+    setFiltered(finalList);
+    setShowDropdown(finalList.length > 0);
+  };
+
+  const handleChange = (val) => {
+    onChangeText(val);
+    setHighlighted(0);
+    runFilter(val);
+  };
+
+  const handleSelect = (item) => {
+    onSelect(item);
+    setShowDropdown(false);
+  };
+
+  const handleKeyDown = (e) => {
+    if (!showDropdown || filtered.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlighted((p) => (p + 1 >= filtered.length ? 0 : p + 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlighted((p) => (p - 1 < 0 ? filtered.length - 1 : p - 1));
+    } else if (e.key === "Enter" || e.key === "Tab") {
+      e.preventDefault();
+      handleSelect(filtered[highlighted]);
+    }
+  };
+
+  const handleBlur = () => {
+    setTimeout(() => {
+      if (!value) {
+        onBlurResolve(null);
+        setShowDropdown(false);
+        return;
+      }
+      const match = suggestions.find(
+        (i) => String(i.HSCode || "").toLowerCase() === value.toLowerCase(),
+      );
+      onBlurResolve(match || null);
+      setShowDropdown(false);
+    }, 150);
+  };
+
+  return (
+    <div style={{ position: "relative" }}>
+      <EditableInput
+        value={value}
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        onFocus={() => runFilter(value)}
+        onBlur={handleBlur}
+      />
+      {showDropdown && filtered.length > 0 && (
+        <div
+          style={{
+            position: "absolute",
+            top: "100%",
+            left: 0,
+            right: 0,
+            zIndex: 30,
+            background: "#fff",
+            border: `1px solid ${C.inputBorder}`,
+            borderRadius: 4,
+            marginTop: 2,
+            maxHeight: 220,
+            overflowY: "auto",
+            boxShadow: "0 4px 10px rgba(0,0,0,0.12)",
+          }}
+        >
+          {filtered.map((item, index) => (
+            <div
+              key={item.HSCode + index}
+              onMouseDown={() => handleSelect(item)}
+              onMouseEnter={() => setHighlighted(index)}
+              style={{
+                padding: "6px 9px",
+                fontSize: 12,
+                cursor: "pointer",
+                background: index === highlighted ? C.bar : "#fff",
+                color: index === highlighted ? "#fff" : C.navy,
+              }}
+            >
+              {item.HSCode} - {item.Description}
+              {String(item[MODULE.controlledKey]) === "1" && (
+                <span style={{ color: C.danger, fontWeight: 800 }}>
+                  {" "}
+                  (Controlled)
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CountryInput({ code, description, onCodeChange, onResolve }) {
+  const suggestions = useCountrySuggestions();
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [filtered, setFiltered] = useState([]);
+  const [highlighted, setHighlighted] = useState(0);
+
+  const runFilter = (val) => {
+    if (!val) {
+      setShowDropdown(false);
+      setFiltered([]);
+      return;
+    }
+    const lower = val.toLowerCase();
+    const matches = suggestions.filter((item) => {
+      const [c] = item.split(":");
+      return c.toLowerCase().startsWith(lower);
+    });
+    setFiltered(matches.slice(0, 50));
+    setShowDropdown(matches.length > 0);
+  };
+
+  const handleChange = (val) => {
+    onCodeChange(val);
+    setHighlighted(0);
+    runFilter(val);
+  };
+
+  const handleSelect = (item) => {
+    const [Code, Description] = item.split(":");
+    onResolve(Code, Description);
+    setShowDropdown(false);
+  };
+
+  const handleKeyDown = (e) => {
+    if (!showDropdown || filtered.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlighted((p) => (p + 1 >= filtered.length ? 0 : p + 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlighted((p) => (p - 1 < 0 ? filtered.length - 1 : p - 1));
+    } else if (e.key === "Enter" || e.key === "Tab") {
+      e.preventDefault();
+      handleSelect(filtered[highlighted]);
+    }
+  };
+
+  const handleBlur = () => {
+    setTimeout(() => {
+      if (!code) {
+        onResolve("", "");
+        setShowDropdown(false);
+        return;
+      }
+      const match = suggestions
+        .map((i) => i.split(":"))
+        .find(([Code]) => Code.toLowerCase() === code.toLowerCase());
+      if (match) onResolve(match[0], match[1]);
+      else onResolve(code, "");
+      setShowDropdown(false);
+    }, 150);
+  };
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "80px 1fr", gap: 6 }}>
+      <div style={{ position: "relative" }}>
+        <EditableInput
+          value={code}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          onFocus={() => runFilter(code)}
+          onBlur={handleBlur}
+          placeholder="CODE"
+        />
+        {showDropdown && filtered.length > 0 && (
+          <div
+            style={{
+              position: "absolute",
+              top: "100%",
+              left: 0,
+              minWidth: 240,
+              zIndex: 30,
+              background: "#fff",
+              border: `1px solid ${C.inputBorder}`,
+              borderRadius: 4,
+              marginTop: 2,
+              maxHeight: 220,
+              overflowY: "auto",
+              boxShadow: "0 4px 10px rgba(0,0,0,0.12)",
+            }}
+          >
+            {filtered.map((item, index) => {
+              const [cc, desc] = item.split(":");
+              return (
+                <div
+                  key={cc + index}
+                  onMouseDown={() => handleSelect(item)}
+                  onMouseEnter={() => setHighlighted(index)}
+                  style={{
+                    padding: "6px 9px",
+                    fontSize: 12,
+                    cursor: "pointer",
+                    background: index === highlighted ? C.bar : "#fff",
+                    color: index === highlighted ? "#fff" : C.navy,
+                  }}
+                >
+                  {cc} - {desc}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      <EditableInput value={description} disabled placeholder="NAME" />
+    </div>
+  );
+}
+
+function parseHawbList(hawbStr) {
+  return String(hawbStr || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+// ---------------------------------------------------------------------------
+// The item form (one item at a time)
+// ---------------------------------------------------------------------------
+
+function ItemFieldsEditor({
+  item,
+  path,
+  onEdit,
+  invoiceNumbers,
+  declarationType,
+  totalGrossWeight,
+  permitId,
+  user,
+  itemNumber,
+  editingItemNo,
+  onSaved,
+  cargoHawbList,
+  outHawbList,
+  moduleCtx,
+}) {
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  const [cascPopupOpen, setCascPopupOpen] = useState(false);
+  const [cascPopupData, setCascPopupData] = useState([]);
+  const [activeCascIndex, setActiveCascIndex] = useState(null);
+
+  const totalOuterPack = useTotalOuterPackOptions();
+  const vehicleTypeOptions = useVehicleTypeOptions();
+  const engineCapacityOptions = useEngineCapacityOptions();
+  const preferentialOptions = usePreferentialOptions();
+  const makingLotOptions = useMakingLotOptions();
+  const currencyOptions = useCurrencyOptions();
+
+  const set = (field, value) => onEdit([...path, field], value);
+
+  const effectiveHawb = editingItemNo
+    ? item.Hawb || ""
+    : cargoHawbList.length > 1
+      ? item.Hawb || cargoHawbList[0] || ""
+      : cargoHawbList[0] || item.Hawb || "";
+
+  const effectiveOutHawb = editingItemNo
+    ? item.OutHawb || ""
+    : outHawbList.length > 1
+      ? item.OutHawb || outHawbList[0] || ""
+      : outHawbList[0] || item.OutHawb || "";
+
+  // ---------------- HS code ----------------
+
+  const applyHsLogic = (hsRow) => {
+    const patch = computeHsLogicFields(hsRow);
+    if (!patch) return;
+    Object.entries(patch).forEach(([k, v]) => set(k, v));
+  };
+
+  const handleHsCodeSelect = (hsItem) => {
+    set("HSCode", hsItem.HSCode);
+    if (!item.Description?.trim()) set("Description", hsItem.Description);
+    applyHsLogic(hsItem);
+  };
+
+  const handleHsCodeBlur = (resolvedRow) => {
+    if (!resolvedRow) {
+      if (!item.HSCode) {
+        set("ShowVehicle", false);
+        set("ShowPacking", false);
+        set("ShowAlcohol", false);
+        set("ShowDutiableQuantity", false);
+        set("DutiableUOM", "--Select--");
+        set("TotalDutiableUOM", "--Select--");
+        set("HSUOM", "--Select--");
+        set("ExciseDutyRate", 0);
+        set("ExciseDutyUOM", "--Select--");
+        set("CustomsDutyRate", 0);
+        set("CustomsDutyUOM", "--Select--");
+      }
+      return;
+    }
+    set("HSCode", resolvedRow.HSCode);
+    if (!item.Description?.trim()) set("Description", resolvedRow.Description);
+    applyHsLogic(resolvedRow);
+  };
+
+  const hsUomError =
+    item.HSUOM === ""
+      ? "PLEASE CHECK UOM"
+      : item.HSUOM && item.CorrectUom && item.HSUOM !== item.CorrectUom
+        ? "INVALID UOM FOR THIS HS CODE"
+        : "";
+
+  // ---------------- Invoice quantity -> HS quantity ----------------
+
+  const convertQtyToHs = (itemqty, hsopt) => {
+    if (hsopt === "TEN" || hsopt === "TPR") return itemqty / 10;
+    if (hsopt === "CEN") return itemqty / 100;
+    if (hsopt === "MIL" || hsopt === "TNE") return itemqty / 1000;
+    if (hsopt === "MTK") return itemqty * 3.213;
+    return itemqty;
+  };
+
+  useEffect(() => {
+    const itemqty = parseFloat(item.InvoiceQuantity);
+    if (!itemqty) return;
+    const next = convertQtyToHs(itemqty, item.HSUOM).toFixed(4);
+    if (item.HSQty !== next) set("HSQty", next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.InvoiceQuantity, item.HSUOM]);
+
+  const warnIfOverGrossWeight = () => {
+    const itemqty = parseFloat(item.InvoiceQuantity);
+    const hsopt = item.HSUOM;
+    if (
+      (hsopt === "KGM" || hsopt === "LTR" || hsopt === "TNE") &&
+      totalGrossWeight &&
+      itemqty > Number(totalGrossWeight)
+    ) {
+      alert(
+        "The Total Gross Weight is Less Than The Sum Of The Item Weight Please Check!!!",
+      );
+    }
+  };
+
+  // ---------------- Dutiable quantity / packing ----------------
+
+  const recomputeDutiable = () => {
+    const op = parseFloat(item.OPQty) || 0;
+    const ip = parseFloat(item.IPQty) || 0;
+    const inp = parseFloat(item.InPQty) || 0;
+    const imp = parseFloat(item.ImPQty) || 0;
+    const totduti = parseFloat(item.TotalDutiableQty) || 0;
+    if (!totduti) return;
+
+    let pckqty = 1;
+    if (op > 0) pckqty = op;
+    if (ip > 0) pckqty = pckqty * ip;
+    if (inp > 0) pckqty = pckqty * inp;
+    if (imp > 0) pckqty = pckqty * imp;
+
+    const HsVal = item.HSCode || "";
+    const typeidval = item.DutyTypeId;
+    const kgmvis = item.KgmVisible;
+    const T1 = parseFloat(item.ExciseDutyRate) || 0;
+    const T2 = parseFloat(item.CIFFOB) || 0;
+    const gstperval = (parseFloat(item.GSTRate) || 0) / 100;
+    const TDQUOM = item.TotalDutiableUOM;
+
+    let totalQty = 0;
+    let excise = 0;
+    let gst = 0;
+
+    const writeExciseAndGst = (qtyForExcise) => {
+      if (!HsVal.startsWith("87")) {
+        excise = qtyForExcise * T1;
+        set("ExciseDutyAmount", excise.toFixed(2));
+      }
+      gst = T2 * gstperval + excise * gstperval;
+      set("GSTAmount", gst.toFixed(2));
+    };
+
+    if (TDQUOM === "LTR") {
+      totalQty = pckqty * totduti;
+      set("TotalDutiableQty", totalQty.toFixed(2));
+      set("HSQty", totalQty.toFixed(2));
+    } else if (TDQUOM === "KGM" && kgmvis === "MULTIPLE") {
+      totalQty = pckqty * totduti;
+      set("TotalDutiableQty", totalQty.toFixed(2));
+      writeExciseAndGst(totalQty);
+    } else if (TDQUOM === "KGM" && kgmvis === "DIVIDE") {
+      totalQty = (pckqty * totduti) / 1000;
+      set("TotalDutiableQty", totalQty.toFixed(2));
+      writeExciseAndGst(totalQty);
+    } else if (TDQUOM === "STK") {
+      totalQty = pckqty;
+      set("TotalDutiableQty", totalQty.toFixed(2));
+      set("HSQty", ((pckqty * totduti) / 1000).toFixed(2));
+      writeExciseAndGst(pckqty);
+    } else if (
+      (TDQUOM === "KGM" && (typeidval === 62 || typeidval === 61)) ||
+      (TDQUOM === "TNE" && typeidval === 62) ||
+      TDQUOM === "DAL"
+    ) {
+      totalQty = pckqty * totduti;
+      set("TotalDutiableQty", totalQty.toFixed(2));
+      writeExciseAndGst(totalQty);
+    } else if (TDQUOM === "NMB" && HsVal.startsWith("87")) {
+      excise = (T2 * T1) / 100;
+      set("ExciseDutyAmount", excise.toFixed(2));
+      gst = T2 * gstperval + excise * gstperval;
+      set("GSTAmount", gst.toFixed(2));
+    }
+  };
+
+  // ---------------- Taxes (module-specific: see calcTaxes) ----------------
+
+  useEffect(() => {
+    if (!MODULE.hasTaxTable) return;
+    const patch = calcTaxes(item, declarationType);
+    Object.entries(patch).forEach(([k, v]) => set(k, v));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    item.TotalDutiableQty,
+    item.AlcoholPercentage,
+    item.ExciseDutyRate,
+    item.CustomsDutyRate,
+    item.CIFFOB,
+    item.GSTRate,
+    declarationType,
+  ]);
+
+  const gstWarning =
+    MODULE.hasTaxTable && Number(item.GSTAmount) >= 10000
+      ? "Total GST Amount greater than 10000"
+      : "";
+
+  // ---------------- Invoice / CIF (module-specific: see calcCif) ----------------
+
+  const applyInvoiceChange = (invoiceNo) => {
+    set("InvoiceNo", invoiceNo);
+    const selected = invoiceNumbers.find((inv) => inv.InvoiceNo === invoiceNo);
+    if (selected) {
+      set("UnitPriceCurrency", selected.TICurrency);
+      set("ExchangeRate", selected.TIExRate);
+    } else {
+      set("UnitPriceCurrency", "");
+      set("ExchangeRate", "");
+    }
+  };
+
+  useEffect(() => {
+    const matched = invoiceNumbers.find((i) => i.InvoiceNo === item.InvoiceNo);
+    const { invoiceCharge, cif } = calcCif(item, matched);
+
+    if (fmt(invoiceCharge) !== fmt(item.InvoiceCharges)) {
+      set("InvoiceCharges", invoiceCharge.toFixed(2));
+    }
+    if (fmt(cif) !== fmt(item.CIFFOB)) {
+      set("CIFFOB", cif.toFixed(2));
+    }
+    if (MODULE.hasTaxTable && (item.HSCode || "").startsWith("87")) {
+      const vehicleExcise = (cif * Number(item.ExciseDutyRate || 0)) / 100;
+      if (fmt(vehicleExcise) !== fmt(item.ExciseDutyAmount)) {
+        set("ExciseDutyAmount", vehicleExcise.toFixed(2));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    item.TotalLineAmount,
+    item.ExchangeRate,
+    item.InvoiceNo,
+    item.HSCode,
+    item.ExciseDutyRate,
+    invoiceNumbers,
+  ]);
+
+  useEffect(() => {
+    if (!item.ChkUnitPrice) {
+      if (item.SumExchangeRate !== "0.00") set("SumExchangeRate", "0.00");
+      return;
+    }
+    const rate = parseFloat(item.ExchangeRate) || 0;
+    const price = parseFloat(item.UnitPrice) || 0;
+    const sum = (rate * price).toFixed(2);
+    if (item.SumExchangeRate !== sum) set("SumExchangeRate", sum);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.ExchangeRate, item.UnitPrice, item.ChkUnitPrice]);
+
+  // ---------------- Optional charges (vehicle) ----------------
+
+  const optionalChargesFunction = (val) => {
+    set("OptionalAmountInput", val);
+    const rate = parseFloat(item.OptionalRate) || 0;
+    set("OptionalCharges", (Number(val || 0) * rate).toFixed(2));
+  };
+
+  const handleOptionalCurrencyChange = (currencyName) => {
+    const match = currencyOptions.find((c) => c.Currency === currencyName);
+    set("OptionalCurrency", currencyName);
+    set("OptionalRate", match ? match.CurrencyRate : "");
+  };
+
+  const lastSellingPriceFunction = () => {
+    const exciseAmt = parseFloat(item.ExciseDutyAmount) || 0;
+    const gstRate = parseFloat(item.GSTRate) || 0;
+    const lastPrice = parseFloat(item.LastSellingPrice);
+    if (lastPrice > 0) {
+      const gstOnExcise = (exciseAmt * gstRate) / 100;
+      const totalGst = (lastPrice * gstRate) / 100 + gstOnExcise;
+      set("GSTAmount", totalGst.toFixed(2));
+    }
+  };
+
+  const itemPreferentialCodeOut = (value) => {
+    set("PreferentialCode", value);
+    if (value === "PRF : if goods are imported under preferential duty rates") {
+      set("CustomsDutyRate", "0.00");
+      set("CustomsDutyUOM", "");
+      set("CustomsDutyAmount", "0.00");
+    }
+  };
+
+  const handleUnbrandedChange = (checked) => {
+    set("Unbranded", checked);
+    set("Brand", checked ? "UNBRANDED" : "");
+  };
+
+  const togglePacking = (checked) => {
+    set("PackingChecked", checked);
+    set("ShowPacking", checked);
+    if (!checked) {
+      set("OPQty", "0.00");
+      set("OPUOM", "");
+      set("IPQty", "0.00");
+      set("IPUOM", "");
+      set("InPQty", "0.00");
+      set("InPUOM", "");
+      set("ImPQty", "0.00");
+      set("ImPUOM", "");
+    }
+  };
+
+  const toggleItemCasc = (checked) => {
+    set("ItemCascChecked", checked);
+    set("ShowItemCasc", checked);
+    if (!checked)
+      set("ItemCasc", [blankCascBox(), blankCascBox(), blankCascBox()]);
+  };
+
+  // ---------------- Item CASC ----------------
+
+  const cloneCasc = () =>
+    item.ItemCasc.map((box) => ({
+      ...box,
+      casc: box.casc.map((row) => row.slice()),
+    }));
+
+  const copyHsQty = (cIndex) => {
+    const updated = item.ItemCasc.slice();
+    updated[cIndex] = {
+      ...updated[cIndex],
+      hsQuantity: item.HSQty,
+      uom: item.HSUOM,
+    };
+    set("ItemCasc", updated);
+  };
+
+  const handleCascFieldChange = (cIndex, field, value) => {
+    const updated = item.ItemCasc.slice();
+    updated[cIndex] = { ...updated[cIndex], [field]: value };
+    set("ItemCasc", updated);
+  };
+
+  const handleCascTableChange = (cIndex, rowIndex, colIndex, value) => {
+    const updated = cloneCasc();
+    if (!updated[cIndex].casc[rowIndex]) {
+      updated[cIndex].casc[rowIndex] = ["", "", ""];
+    }
+    updated[cIndex].casc[rowIndex][colIndex] = value;
+    set("ItemCasc", updated);
+  };
+
+  const addCascRow = (cIndex) => {
+    const updated = cloneCasc();
+    updated[cIndex].casc.push(["", "", ""]);
+    set("ItemCasc", updated);
+  };
+
+  const deleteCascRow = (cIndex, rowIndex) => {
+    const updated = cloneCasc();
+    updated[cIndex].casc.splice(rowIndex, 1);
+    set("ItemCasc", updated);
+  };
+
+  const handleCascSearchClick = (cIndex) => {
+    setActiveCascIndex(cIndex);
+    setCascPopupOpen(true);
+    fetchProductCodePopupData(item.HSCode, setCascPopupData);
+  };
+
+  const handleCascProductSelect = (selectedItem) => {
+    if (activeCascIndex === null) return;
+    const updated = item.ItemCasc.slice();
+    updated[activeCascIndex] = {
+      ...updated[activeCascIndex],
+      code: selectedItem.CASCCode,
+      uom: selectedItem.UOM,
+    };
+    set("ItemCasc", updated);
+    setCascPopupOpen(false);
+    setActiveCascIndex(null);
+  };
+
+  const toggleLotId = (checked) => {
+    set("ShowLotId", checked);
+    if (!checked) {
+      set("CurrentLot", "");
+      set("Making", "");
+      set("PreviousLot", "");
+    }
+  };
+
+  const toggleShippingMarks = (checked) => {
+    set("ShowShippingMarks", checked);
+    if (!checked) {
+      set("ShippingMarks1", "");
+      set("ShippingMarks2", "");
+      set("ShippingMarks3", "");
+      set("ShippingMarks4", "");
+    }
+  };
+
+  // ---------------- Validate + save ----------------
+
+  const validateItem = () => {
+    const errors = {};
+    if (!item.HSCode?.trim()) errors.HSCode = "FILL HSCODE";
+    if (!item.Description?.trim())
+      errors.Description = "FILL HSCODE DESCRIPTION";
+    if (!item.Country?.trim()) errors.Country = "FILL COO";
+    if (MODULE.requireBrand && !item.Brand?.trim())
+      errors.Brand = "FILL BRAND";
+    if (item.HSQty === "" || Number(item.HSQty) === 0)
+      errors.HSQty = "FILL HS QUANTITY";
+    if (!item.HSUOM) errors.HSUOM = "PLEASE CHECK UOM";
+    if (!item.InvoiceNo) errors.InvoiceNo = "CHOOSE INVOICE";
+    if (item.TotalLineAmount === "" || Number(item.TotalLineAmount) === 0) {
+      errors.TotalLineAmount = "FILL TOTAL LINE AMOUNT";
+    }
+    if (item.ItemCascChecked && !item.ItemCasc?.[0]?.code?.trim()) {
+      errors.ItemCasc = "Please Check The Item Casc";
+    }
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const buildCascPayload = (itemNo) => {
+    const username = user?.username || "";
+    return (item.ItemCasc || []).flatMap((box, boxIndex) => {
+      if (!box.code) return [];
+      const common = {
+        ItemNo: itemNo,
+        ProductCode: box.code,
+        Quantity: box.hsQuantity || 0,
+        ProductUOM: box.uom || "",
+        PermitId: permitId,
+        MessageType: MODULE.messageType,
+        TouchUser: username,
+        TouchTime: new Date().toISOString(),
+        EndUserDes: MODULE.hasEndUserDescription
+          ? box.enduserDescription || ""
+          : "",
+        CASCId: `Casc${boxIndex + 1}`,
+      };
+      const hasRowData = (box.casc || []).some((row) =>
+        row.some((cell) => cell !== ""),
+      );
+      if (!hasRowData) {
+        return [
+          { ...common, RowNo: 1, CascCode1: "", CascCode2: "", CascCode3: "" },
+        ];
+      }
+      return box.casc
+        .filter((row) => row.some((cell) => cell !== ""))
+        .map((row, rowIndex) => ({
+          ...common,
+          RowNo: rowIndex + 1,
+          CascCode1: row[0] || "",
+          CascCode2: row[1] || "",
+          CascCode3: row[2] || "",
+        }));
+    });
+  };
+
+  const buildItemPayload = (itemNo) => ({
+    CascDatas: JSON.stringify(buildCascPayload(itemNo)),
+    PermitId: permitId,
+    ItemNo: itemNo,
+    MessageType: MODULE.messageType,
+    HSCode: item.HSCode || "",
+    Description: (item.Description || "").toUpperCase(),
+    DGIndicator: MODULE.dgAsYesNo
+      ? item.DGIndicator
+        ? "Yes"
+        : "No"
+      : item.DGIndicator
+        ? "True"
+        : "False",
+    Contry: item.Country || "",
+    EndUserDescription: "",
+    Brand: item.Brand || "",
+    Model: item.Model || "",
+    InHAWBOBL: effectiveHawb || "",
+    OutHAWBOBL: MODULE.hasOutHawb ? effectiveOutHawb || "" : "",
+
+    DutiableQty: item.DutiableQty || 0,
+    TotalDutiableQty: item.TotalDutiableQty || 0,
+    DutiableUOM: item.DutiableUOM || "--Select--",
+    TotalDutiableUOM: item.TotalDutiableUOM || "--Select--",
+    InvoiceQuantity: item.InvoiceQuantity || 0,
+    HSQty: item.HSQty || 0,
+    HSUOM: item.HSUOM || "--Select--",
+
+    AlcoholPer: item.AlcoholPercentage || 0,
+    InvoiceNo: item.InvoiceNo || "",
+    ChkUnitPrice: MODULE.chkUnitAsBoolean
+      ? !!item.ChkUnitPrice
+      : item.ChkUnitPrice
+        ? "True"
+        : "False",
+    UnitPrice: item.UnitPrice || 0,
+    UnitPriceCurrency: item.UnitPriceCurrency || "",
+    ExchangeRate: item.ExchangeRate || 0,
+    SumExchangeRate: item.SumExchangeRate || 0,
+    TotalLineAmount: item.TotalLineAmount || 0,
+    InvoiceCharges: item.InvoiceCharges || 0,
+    CIFFOB: Number(item.CIFFOB || 0).toFixed(2),
+
+    OPQty: item.OPQty || 0,
+    OPUOM: item.OPUOM || "--Select--",
+    IPQty: item.IPQty || 0,
+    IPUOM: item.IPUOM || "--Select--",
+    InPqty: item.InPQty || 0,
+    InPUOM: item.InPUOM || "--Select--",
+    ImPQty: item.ImPQty || 0,
+    ImPUOM: item.ImPUOM || "--Select--",
+    PreferentialCode: item.PreferentialCode || "--Select--",
+    GSTRate: item.GSTRate,
+    GSTUOM: item.GSTUOM || "",
+    GSTAmount: item.GSTAmount || 0,
+    ExciseDutyRate: item.ExciseDutyRate || 0,
+    ExciseDutyUOM: item.ExciseDutyUOM || "",
+    ExciseDutyAmount: item.ExciseDutyAmount || 0,
+    CustomsDutyRate: item.CustomsDutyRate || 0,
+    CustomsDutyUOM: item.CustomsDutyUOM || "",
+    CustomsDutyAmount: item.CustomsDutyAmount || 0,
+    OtherTaxRate: item.OtherTaxRate || 0,
+    OtherTaxUOM: item.OtherTaxUOM || "--Select--",
+    OtherTaxAmount: item.OtherTaxAmount || 0,
+    LSPValue: item.LastSellingPrice || 0,
+    CurrentLot: item.CurrentLot || "",
+    PreviousLot: item.PreviousLot || "",
+    Making: item.Making || "--Select--",
+    ShippingMarks1: item.ShippingMarks1 || "",
+    ShippingMarks2: item.ShippingMarks2 || "",
+    ShippingMarks3: item.ShippingMarks3 || "",
+    ShippingMarks4: item.ShippingMarks4 || "",
+    TouchUser: (user?.username || "").toUpperCase(),
+    TouchTime: new Date().toISOString(),
+    VehicleType: item.VehicleType || "--Select--",
+    OptionalChrgeUOM: item.OptionalCurrency || "--Select--",
+    EngineCapcity: item.EngineCapacity || "",
+    Optioncahrge: item.OptionalCharges || 0,
+    OptionalSumtotal: item.OptionalAmountInput || 0,
+    OptionalSumExchage: item.OptionalRate || 0,
+    EngineCapUOM: item.EngineCapacityUOM || "--Select--",
+    orignaldatereg: item.OriginalRegDate || "",
+
+    ...moduleExtraPayload(item),
+  });
+
+  const handleSaveItem = async () => {
+    setSaveError("");
+    if (!permitId) {
+      setSaveError(
+        'Click "New" first to generate a Permit ID before saving an item.',
+      );
+      return;
+    }
+    if (!validateItem()) return;
+
+    const itemNo = editingItemNo || itemNumber;
+    const payload = normalizeSelectPlaceholders(buildItemPayload(itemNo));
+
+    setIsSaving(true);
+    try {
+      const res = await API.post(MODULE.saveEndpoint, payload);
+      if (res.data?.Warning) alert(res.data.Warning);
+      onSaved({
+        ...item,
+        Hawb: effectiveHawb,
+        OutHawb: effectiveOutHawb,
+        ItemNo: itemNo,
+      });
+    } catch (error) {
+      console.error("Save failed", error);
+      setSaveError(
+        error.response?.data?.error ||
+          error.response?.data?.Result ||
+          "Failed to save item, check console for details",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const packUomOptions = totalOuterPack.map((t) => t.Name).filter(Boolean);
+
+  const taxInputRow = (label, rateKey, uomKey, amtKey) => (
+    <tr>
+      <td style={{ padding: "7px 9px" }}>{label}</td>
+      <td style={{ padding: 6 }}>
+        <EditableInput value={item[rateKey]} disabled />
+      </td>
+      <td style={{ padding: 6 }}>
+        <EditableInput value={item[uomKey]} disabled />
+      </td>
+      <td style={{ padding: 6 }}>
+        <EditableInput value={item[amtKey]} disabled />
+      </td>
+    </tr>
+  );
+
+  return (
+    <div>
+      {/* HEADER ROW */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 12,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span
+            style={{
+              color: C.navy,
+              fontWeight: 800,
+              fontSize: 12.5,
+              letterSpacing: 0.3,
+            }}
+          >
+            {editingItemNo
+              ? `Editing Item ${editingItemNo}`
+              : `New Item ${itemNumber}`}
+          </span>
+          {item.IsControlled && (
+            <span
+              style={{
+                background: C.dangerBg,
+                color: C.danger,
+                fontWeight: 800,
+                fontSize: 10.5,
+                padding: "3px 8px",
+                borderRadius: 12,
+              }}
+            >
+              CONTROLLED ITEM
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={handleSaveItem}
+          disabled={isSaving}
+          style={{
+            border: "none",
+            background: isSaving ? "#90caf9" : C.bar,
+            color: "#fff",
+            fontWeight: 700,
+            fontSize: 11.5,
+            padding: "6px 14px",
+            borderRadius: 6,
+            cursor: isSaving ? "not-allowed" : "pointer",
+          }}
+        >
+          {isSaving ? "Saving…" : editingItemNo ? "Update Item" : "Save Item"}
+        </button>
+      </div>
+      {saveError && (
+        <div
+          style={{
+            color: C.danger,
+            fontWeight: 700,
+            fontSize: 11.5,
+            marginBottom: 10,
+          }}
+        >
+          {saveError}
+        </div>
+      )}
+
+      {/* BASIC DETAILS */}
+      <ItemSection title="Basic Details">
+        <Grid cols={2}>
+          <Field label={MODULE.hasOutHawb ? "In HAWB / HBL" : "HAWB / HBL"}>
+            {editingItemNo ? (
+              <EditableInput value={item.Hawb} onChange={(v) => set("Hawb", v)} />
+            ) : cargoHawbList.length > 1 ? (
+              <EditableSelect
+                value={effectiveHawb}
+                onChange={(v) => set("Hawb", v)}
+                options={cargoHawbList}
+              />
+            ) : (
+              <EditableInput value={effectiveHawb} disabled onChange={() => {}} />
+            )}
+          </Field>
+          <Field label="HS Code" error={fieldErrors.HSCode}>
+            <HsCodeInput
+              value={item.HSCode}
+              onChangeText={(v) => set("HSCode", v)}
+              onSelect={handleHsCodeSelect}
+              onBlurResolve={handleHsCodeBlur}
+            />
+          </Field>
+        </Grid>
+        {MODULE.hasOutHawb && outHawbList.length > 0 && (
+          <div style={{ marginTop: 10, maxWidth: "50%" }}>
+            <Field label="Out HAWB / HBL">
+              {editingItemNo ? (
+                <EditableInput
+                  value={item.OutHawb}
+                  onChange={(v) => set("OutHawb", v)}
+                />
+              ) : outHawbList.length > 1 ? (
+                <EditableSelect
+                  value={effectiveOutHawb}
+                  onChange={(v) => set("OutHawb", v)}
+                  options={outHawbList}
+                />
+              ) : (
+                <EditableInput
+                  value={effectiveOutHawb}
+                  disabled
+                  onChange={() => {}}
+                />
+              )}
+            </Field>
+          </div>
+        )}
+        <div style={{ marginTop: 10 }}>
+          <Field label="Description" error={fieldErrors.Description}>
+            <textarea
+              value={item.Description ?? ""}
+              onChange={(e) => set("Description", e.target.value)}
+              style={{
+                border: `1px solid ${C.inputBorder}`,
+                borderRadius: 4,
+                padding: "7px 9px",
+                fontSize: 12,
+                color: C.navy,
+                width: "100%",
+                minHeight: 60,
+                resize: "vertical",
+                boxSizing: "border-box",
+                fontFamily: "inherit",
+              }}
+            />
+          </Field>
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <Grid cols={2}>
+            <Field label="Country of Origin (COO)" error={fieldErrors.Country}>
+              <CountryInput
+                code={item.Country}
+                description={item.CountryDescription}
+                onCodeChange={(v) => set("Country", v)}
+                onResolve={(code, desc) => {
+                  set("Country", code);
+                  set("CountryDescription", desc);
+                }}
+              />
+            </Field>
+            <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
+              <Checkbox
+                checked={item.DGIndicator}
+                onChange={(v) => set("DGIndicator", v)}
+                label="DG Indicator"
+              />
+              <Checkbox
+                checked={item.Unbranded}
+                onChange={handleUnbrandedChange}
+                label="Unbranded"
+              />
+            </div>
+          </Grid>
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <Grid cols={2}>
+            <Field label="Brand" error={fieldErrors.Brand}>
+              <EditableInput
+                value={item.Brand}
+                onChange={(v) => set("Brand", v)}
+              />
+            </Field>
+            <Field label="Model">
+              <EditableInput
+                value={item.Model}
+                onChange={(v) => set("Model", v)}
+              />
+            </Field>
+          </Grid>
+        </div>
+      </ItemSection>
+
+      {/* VEHICLE */}
+      {item.ShowVehicle && (
+        <ItemSection title="Vehicle Details">
+          <Grid cols={3}>
+            <Field label="Vehicle Type">
+              <EditableSelect
+                value={item.VehicleType}
+                onChange={(v) => set("VehicleType", v)}
+                options={vehicleTypeOptions.map((v) => v.Name)}
+              />
+            </Field>
+            <Field label="Engine Capacity">
+              <EditableInput
+                value={item.EngineCapacity}
+                onChange={(v) => set("EngineCapacity", v)}
+                placeholder="0.00"
+              />
+            </Field>
+            <Field label="Engine Capacity UOM">
+              <EditableSelect
+                value={item.EngineCapacityUOM}
+                onChange={(v) => set("EngineCapacityUOM", v)}
+                options={engineCapacityOptions.map((v) => v.Name)}
+              />
+            </Field>
+          </Grid>
+          <div style={{ marginTop: 10 }}>
+            <Field label="Original Registration Date">
+              <EditableInput
+                value={item.OriginalRegDate}
+                onChange={(v) => set("OriginalRegDate", v)}
+                placeholder="DD/MM/YYYY"
+                upper={false}
+              />
+            </Field>
+          </div>
+        </ItemSection>
+      )}
+
+      {/* QUANTITIES */}
+      <ItemSection title="Quantities">
+        <Grid cols={2}>
+          {item.ShowDutiableQuantity && (
+            <Field label="Dutiable Quantity">
+              <div style={{ display: "flex", gap: 6 }}>
+                <EditableInput
+                  value={item.DutiableQty}
+                  onChange={(v) => set("DutiableQty", v)}
+                  placeholder="0.00"
+                />
+                <EditableSelect
+                  value={item.DutiableUOM}
+                  onChange={(v) => set("DutiableUOM", v)}
+                  options={packUomOptions}
+                />
+              </div>
+            </Field>
+          )}
+          <Field label="Total Dutiable Quantity">
+            <div style={{ display: "flex", gap: 6 }}>
+              <EditableInput
+                value={item.TotalDutiableQty}
+                onChange={(v) => set("TotalDutiableQty", v)}
+                onBlur={recomputeDutiable}
+                placeholder="0.00"
+              />
+              <EditableSelect
+                value={item.TotalDutiableUOM}
+                onChange={(v) => set("TotalDutiableUOM", v)}
+                options={packUomOptions}
+              />
+            </div>
+          </Field>
+          <Field label="Invoice Quantity">
+            <EditableInput
+              value={item.InvoiceQuantity}
+              onChange={(v) => set("InvoiceQuantity", v)}
+              onBlur={warnIfOverGrossWeight}
+              placeholder="0.00"
+            />
+          </Field>
+          <Field label="HS Quantity" error={hsUomError || fieldErrors.HSQty}>
+            <div style={{ display: "flex", gap: 6 }}>
+              <EditableInput
+                value={item.HSQty}
+                onChange={(v) => set("HSQty", v)}
+                placeholder="0.00"
+              />
+              <EditableSelect
+                value={item.HSUOM}
+                onChange={(v) => set("HSUOM", v)}
+                options={packUomOptions}
+              />
+            </div>
+          </Field>
+          {item.ShowAlcohol && (
+            <Field label="Alcohol Percentage (%)">
+              <EditableInput
+                value={item.AlcoholPercentage}
+                onChange={(v) => set("AlcoholPercentage", v)}
+                placeholder="0.00"
+              />
+            </Field>
+          )}
+        </Grid>
+      </ItemSection>
+
+      {/* INVOICE & PRICING */}
+      <ItemSection title="Invoice & Pricing">
+        <Grid cols={2}>
+          <Field label="Invoice Number" error={fieldErrors.InvoiceNo}>
+            <EditableSelect
+              value={item.InvoiceNo}
+              onChange={applyInvoiceChange}
+              options={invoiceNumbers.map((i) => i.InvoiceNo).filter(Boolean)}
+            />
+          </Field>
+          <Field label="Currency / Ex.Rate">
+            <div style={{ display: "flex", gap: 6 }}>
+              <EditableInput value={item.UnitPriceCurrency} disabled />
+              <EditableInput value={item.ExchangeRate} disabled />
+            </div>
+          </Field>
+        </Grid>
+
+        <div style={{ marginTop: 10 }}>
+          <Checkbox
+            checked={item.ChkUnitPrice}
+            onChange={(v) => set("ChkUnitPrice", v)}
+            label="Unit Price (Auto)"
+          />
+        </div>
+        {item.ChkUnitPrice && (
+          <div style={{ marginTop: 10 }}>
+            <Grid cols={2}>
+              <Field label="Unit Price">
+                <EditableInput
+                  value={item.UnitPrice}
+                  onChange={(v) => set("UnitPrice", v)}
+                  placeholder="0.00"
+                />
+              </Field>
+              <Field label="Sum Exchange Rate">
+                <EditableInput value={item.SumExchangeRate} disabled />
+              </Field>
+            </Grid>
+          </div>
+        )}
+
+        {item.ShowOptionalCharges && (
+          <div style={{ marginTop: 10 }}>
+            <Grid cols={3}>
+              <Field label="Optional Charge Currency">
+                <EditableSelect
+                  value={item.OptionalCurrency}
+                  onChange={handleOptionalCurrencyChange}
+                  options={currencyOptions.map((c) => c.Currency)}
+                />
+              </Field>
+              <Field label="Optional Amount">
+                <EditableInput
+                  value={item.OptionalAmountInput}
+                  onChange={optionalChargesFunction}
+                  placeholder="0.00"
+                />
+              </Field>
+              <Field label="Optional Charges ($)">
+                <EditableInput value={item.OptionalCharges} disabled />
+              </Field>
+            </Grid>
+          </div>
+        )}
+
+        <div style={{ marginTop: 10 }}>
+          <Grid cols={2}>
+            <Field label="Total Line Amount" error={fieldErrors.TotalLineAmount}>
+              <EditableInput
+                value={item.TotalLineAmount}
+                onChange={(v) => set("TotalLineAmount", v)}
+                placeholder="0.00"
+              />
+            </Field>
+            <Field label="Total Invoice Charge (SGD)">
+              <EditableInput value={item.InvoiceCharges} disabled />
+            </Field>
+            <Field label="CIF / FOB (SGD)">
+              <EditableInput value={item.CIFFOB} disabled />
+            </Field>
+            <Field label="Last Selling Price (SGD)">
+              <EditableInput
+                value={item.LastSellingPrice}
+                onChange={(v) => set("LastSellingPrice", v)}
+                onBlur={lastSellingPriceFunction}
+                placeholder="0.00"
+              />
+            </Field>
+          </Grid>
+        </div>
+      </ItemSection>
+
+      {/* TAX TABLE */}
+      {MODULE.hasTaxTable && (
+        <ItemSection title="Duty & Tax">
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr>
+                  {["Item", "Rate", "UOM", "Amount ($)"].map((h) => (
+                    <th
+                      key={h}
+                      style={{
+                        background: C.tableHead,
+                        color: "#fff",
+                        padding: "7px 9px",
+                        textAlign: "left",
+                        fontSize: 10.5,
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr style={{ background: C.rowAlt }}>
+                  <td style={{ padding: "7px 9px" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <input
+                        type="checkbox"
+                        checked={item.GSTRecalculate}
+                        onChange={(e) => set("GSTRecalculate", e.target.checked)}
+                        style={{ accentColor: C.bar }}
+                      />
+                      GST (recalc)
+                    </label>
+                  </td>
+                  <td style={{ padding: 6 }}>
+                    <EditableInput
+                      value={item.GSTRate}
+                      onChange={(v) => set("GSTRate", v)}
+                    />
+                  </td>
+                  <td style={{ padding: 6 }}>
+                    <EditableInput value={item.GSTUOM} disabled />
+                  </td>
+                  <td style={{ padding: 6 }}>
+                    <EditableInput
+                      value={item.GSTAmount}
+                      onChange={(v) => set("GSTAmount", v)}
+                      disabled={!item.GSTRecalculate}
+                      placeholder="0.00"
+                    />
+                  </td>
+                </tr>
+                {taxInputRow("Excise Duty", "ExciseDutyRate", "ExciseDutyUOM", "ExciseDutyAmount")}
+                {taxInputRow("Customs Duty", "CustomsDutyRate", "CustomsDutyUOM", "CustomsDutyAmount")}
+                <tr>
+                  <td style={{ padding: "7px 9px" }}>Other Tax</td>
+                  <td style={{ padding: 6 }}>
+                    <EditableInput
+                      value={item.OtherTaxRate}
+                      onChange={(v) => set("OtherTaxRate", v)}
+                    />
+                  </td>
+                  <td style={{ padding: 6 }}>
+                    <EditableSelect
+                      value={item.OtherTaxUOM}
+                      onChange={(v) => set("OtherTaxUOM", v)}
+                      options={packUomOptions}
+                    />
+                  </td>
+                  <td style={{ padding: 6 }}>
+                    <EditableInput
+                      value={item.OtherTaxAmount}
+                      onChange={(v) => set("OtherTaxAmount", v)}
+                    />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          {gstWarning && (
+            <div style={{ color: C.danger, fontSize: 11, fontWeight: 700, marginTop: 6 }}>
+              {gstWarning}
+            </div>
+          )}
+        </ItemSection>
+      )}
+
+      {/* ADDITIONAL FEATURES */}
+      <ItemSection title="Additional Features">
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 18 }}>
+          <Checkbox
+            checked={item.PackingChecked}
+            onChange={togglePacking}
+            label="Packing Info"
+          />
+          <Checkbox
+            checked={item.ItemCascChecked}
+            onChange={toggleItemCasc}
+            label="Item CASC"
+          />
+          <Checkbox
+            checked={item.ShowShippingMarks}
+            onChange={toggleShippingMarks}
+            label="Shipping Marks"
+          />
+          <Checkbox checked={item.ShowLotId} onChange={toggleLotId} label="Lot ID" />
+        </div>
+        {fieldErrors.ItemCasc && (
+          <div style={{ color: C.danger, fontSize: 10, fontWeight: 700, marginTop: 6 }}>
+            {fieldErrors.ItemCasc}
+          </div>
+        )}
+        <div style={{ marginTop: 10, maxWidth: 320 }}>
+          <Field label="Preferential Code">
+            <EditableSelect
+              value={item.PreferentialCode}
+              onChange={
+                MODULE.hasTaxTable
+                  ? itemPreferentialCodeOut
+                  : (v) => set("PreferentialCode", v)
+              }
+              options={preferentialOptions.map((p) => p.Name)}
+            />
+          </Field>
+        </div>
+      </ItemSection>
+
+      {/* PACKING */}
+      {item.ShowPacking && (
+        <ItemSection title="Packing Details">
+          <Grid cols={2}>
+            {[
+              ["Outer Pack Quantity", "OPQty", "OPUOM"],
+              ["In Pack Quantity", "IPQty", "IPUOM"],
+              ["Inner Pack Quantity", "InPQty", "InPUOM"],
+              ["Inmost Pack Quantity", "ImPQty", "ImPUOM"],
+            ].map(([label, qtyKey, uomKey]) => (
+              <Field label={label} key={qtyKey}>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <EditableInput
+                    value={item[qtyKey]}
+                    onChange={(v) => set(qtyKey, v)}
+                    onBlur={recomputeDutiable}
+                    placeholder="0.00"
+                  />
+                  <EditableSelect
+                    value={item[uomKey]}
+                    onChange={(v) => set(uomKey, v)}
+                    options={packUomOptions}
+                  />
+                </div>
+              </Field>
+            ))}
+          </Grid>
+        </ItemSection>
+      )}
+
+      {/* ITEM CASC */}
+      {item.ShowItemCasc && (
+        <ItemSection title="Item CASC">
+          {item.ItemCasc.map((box, cIndex) => (
+            <div
+              key={cIndex}
+              style={{
+                border: `1px solid ${C.panelBorder}`,
+                borderRadius: 6,
+                padding: 10,
+                marginBottom: 10,
+                background: cIndex % 2 ? C.rowAlt : "#fff",
+              }}
+            >
+              <Grid cols={4}>
+                <Field label={`Product Code ${cIndex + 1}`}>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <FaSearch
+                      style={{ cursor: "pointer", flexShrink: 0, color: C.bar }}
+                      onClick={() => handleCascSearchClick(cIndex)}
+                      title="Search product code"
+                    />
+                    <EditableInput
+                      value={box.code}
+                      onChange={(v) => handleCascFieldChange(cIndex, "code", v)}
+                    />
+                  </div>
+                </Field>
+                <Field label="HS Quantity">
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <EditableInput
+                      value={box.hsQuantity}
+                      onChange={(v) => handleCascFieldChange(cIndex, "hsQuantity", v)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => copyHsQty(cIndex)}
+                      title="Copy HS Quantity"
+                      style={{
+                        border: `1px solid ${C.bar}`,
+                        background: "#fff",
+                        color: C.bar,
+                        borderRadius: 4,
+                        fontSize: 10,
+                        fontWeight: 700,
+                        padding: "0 8px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      COPY
+                    </button>
+                  </div>
+                </Field>
+                <Field label="UOM">
+                  <EditableSelect
+                    value={box.uom}
+                    onChange={(v) => handleCascFieldChange(cIndex, "uom", v)}
+                    options={packUomOptions}
+                  />
+                </Field>
+                <div style={{ display: "flex", alignItems: "flex-end" }}>
+                  <AddBtn onClick={() => addCascRow(cIndex)} label="+ CASC Row" />
+                </div>
+              </Grid>
+
+              {MODULE.hasEndUserDescription && (
+                <div style={{ marginTop: 8 }}>
+                  <Field label="End User Description">
+                    <textarea
+                      value={box.enduserDescription || ""}
+                      onChange={(e) =>
+                        handleCascFieldChange(
+                          cIndex,
+                          "enduserDescription",
+                          e.target.value.toUpperCase(),
+                        )
+                      }
+                      style={{
+                        border: `1px solid ${C.inputBorder}`,
+                        borderRadius: 4,
+                        padding: "6px 8px",
+                        fontSize: 11.5,
+                        width: "100%",
+                        minHeight: 50,
+                        resize: "vertical",
+                        boxSizing: "border-box",
+                        fontFamily: "inherit",
+                      }}
+                    />
+                  </Field>
+                </div>
+              )}
+
+              <div style={{ overflowX: "auto", marginTop: 8 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                  <thead>
+                    <tr>
+                      {["CASC Code 1", "CASC Code 2", "CASC Code 3", ""].map((h) => (
+                        <th
+                          key={h}
+                          style={{
+                            background: C.tableHead,
+                            color: "#fff",
+                            padding: "6px 8px",
+                            fontSize: 10,
+                            textAlign: "left",
+                          }}
+                        >
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(box.casc.length ? box.casc : [["", "", ""]]).map(
+                      (row, rowIndex) => (
+                        <tr key={rowIndex}>
+                          {row.map((cell, colIndex) => (
+                            <td key={colIndex} style={{ padding: 5 }}>
+                              <EditableInput
+                                value={cell}
+                                onChange={(v) =>
+                                  handleCascTableChange(cIndex, rowIndex, colIndex, v)
+                                }
+                              />
+                            </td>
+                          ))}
+                          <td style={{ padding: 5, textAlign: "center" }}>
+                            <FaTrash
+                              style={{ cursor: "pointer", color: C.danger }}
+                              onClick={() => deleteCascRow(cIndex, rowIndex)}
+                            />
+                          </td>
+                        </tr>
+                      ),
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+        </ItemSection>
+      )}
+
+      {/* LOT ID */}
+      {item.ShowLotId && (
+        <ItemSection title="Lot ID">
+          <Grid cols={3}>
+            <Field label="Current Lot">
+              <EditableInput
+                value={item.CurrentLot}
+                onChange={(v) => set("CurrentLot", v)}
+              />
+            </Field>
+            <Field label="Making">
+              <EditableSelect
+                value={item.Making}
+                onChange={(v) => set("Making", v)}
+                options={makingLotOptions.map((m) => m.Name)}
+              />
+            </Field>
+            <Field label="Previous Lot">
+              <EditableInput
+                value={item.PreviousLot}
+                onChange={(v) => set("PreviousLot", v)}
+              />
+            </Field>
+          </Grid>
+        </ItemSection>
+      )}
+
+      {/* SHIPPING MARKS */}
+      {item.ShowShippingMarks && (
+        <ItemSection title="Shipping Marks">
+          <Grid cols={4}>
+            {["ShippingMarks1", "ShippingMarks2", "ShippingMarks3", "ShippingMarks4"].map(
+              (key, i) => (
+                <Field label={`Marks ${i + 1}`} key={key}>
+                  <textarea
+                    value={item[key] ?? ""}
+                    onChange={(e) => set(key, e.target.value.toUpperCase())}
+                    style={{
+                      border: `1px solid ${C.inputBorder}`,
+                      borderRadius: 4,
+                      padding: "6px 8px",
+                      fontSize: 11.5,
+                      width: "100%",
+                      minHeight: 50,
+                      resize: "vertical",
+                      boxSizing: "border-box",
+                      fontFamily: "inherit",
+                    }}
+                  />
+                </Field>
+              ),
+            )}
+          </Grid>
+        </ItemSection>
+      )}
+
+      {/* Module-only sections (e.g. Certificate of Origin for Out) */}
+      {renderModuleSections({ item, set, packUomOptions, ctx: moduleCtx })}
+
+      {cascPopupOpen && (
+        <SearchPopup
+          title="PRODUCT CODE"
+          data={cascPopupData}
+          columns={["CASCCode", "Description", "UOM"]}
+          onClose={() => {
+            setCascPopupOpen(false);
+            setActiveCascIndex(null);
+          }}
+          onSelect={handleCascProductSelect}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Saved row -> editable draft
+// ---------------------------------------------------------------------------
+
+function buildEditDraftFromSavedRow(raw, hsCodeSuggestions) {
+  const hsRow = hsCodeSuggestions.find(
+    (h) =>
+      String(h.HSCode || "").toLowerCase() ===
+      String(raw.HSCode || "").toLowerCase(),
+  );
+  const hsPatch = computeHsLogicFields(hsRow) || {};
+
+  const draft = {
+    ...blankItem(),
+    ...hsPatch,
+
+    ItemNo: raw.ItemNo,
+    HSCode: raw.HSCode || "",
+    Description: raw.Description || "",
+    DGIndicator: parseFlag(raw.DGIndicator),
+    Country: raw.Contry || "",
+    Brand: raw.Brand || "",
+    Unbranded: String(raw.Brand || "").toUpperCase() === "UNBRANDED",
+    Model: raw.Model || "",
+    Hawb: raw.InHAWBOBL || "",
+    OutHawb: raw.OutHAWBOBL || "",
+
+    DutiableQty: fmt(raw.DutiableQty, 2),
+    DutiableUOM: raw.DutiableUOM || "--Select--",
+    TotalDutiableQty: fmt(raw.TotalDutiableQty, 4),
+    TotalDutiableUOM: raw.TotalDutiableUOM || "--Select--",
+    InvoiceQuantity: fmt(raw.InvoiceQuantity, 4),
+
+    VehicleType: raw.VehicleType || "--Select--",
+    EngineCapacity: raw.EngineCapcity || "",
+    EngineCapacityUOM: raw.EngineCapUOM || "--Select--",
+    OriginalRegDate: raw.orignaldatereg || "",
+
+    HSQty: fmt(raw.HSQty, 4),
+    HSUOM: raw.HSUOM || "--Select--",
+    AlcoholPercentage: fmt(raw.AlcoholPer, 2),
+
+    InvoiceNo: raw.InvoiceNo || "",
+    ChkUnitPrice: parseFlag(raw.ChkUnitPrice),
+    UnitPrice: fmt(raw.UnitPrice, 2),
+    UnitPriceCurrency: raw.UnitPriceCurrency || "",
+    ExchangeRate: fmt(raw.ExchangeRate, 6),
+    SumExchangeRate: fmt(raw.SumExchangeRate, 2),
+    TotalLineAmount: fmt(raw.TotalLineAmount, 2),
+    InvoiceCharges: fmt(raw.InvoiceCharges, 2),
+    CIFFOB: fmt(raw.CIFFOB, 2),
+
+    OPQty: fmt(raw.OPQty, 2),
+    OPUOM: raw.OPUOM || "--Select--",
+    IPQty: fmt(raw.IPqty ?? raw.IPQty, 2),
+    IPUOM: raw.IPUOM || "--Select--",
+    InPQty: fmt(raw.InPqty, 2),
+    InPUOM: raw.InPUOM || "--Select--",
+    ImPQty: fmt(raw.ImPQty, 2),
+    ImPUOM: raw.ImPUOM || "--Select--",
+
+    PreferentialCode: raw.PreferentialCode || "",
+    GSTRate: fmt(raw.GSTRate, 4),
+    GSTUOM: raw.GSTUOM || "PER",
+    GSTAmount: fmt(raw.GSTAmount, 2),
+    ExciseDutyRate: fmt(raw.ExciseDutyRate, 2),
+    ExciseDutyUOM: raw.ExciseDutyUOM || "--Select--",
+    ExciseDutyAmount: fmt(raw.ExciseDutyAmount, 2),
+    CustomsDutyRate: fmt(raw.CustomsDutyRate, 2),
+    CustomsDutyUOM: raw.CustomsDutyUOM || "--Select--",
+    CustomsDutyAmount: fmt(raw.CustomsDutyAmount, 2),
+    OtherTaxRate: fmt(raw.OtherTaxRate, 4),
+    OtherTaxUOM: raw.OtherTaxUOM || "--Select--",
+    OtherTaxAmount: fmt(raw.OtherTaxAmount, 2),
+    LastSellingPrice: fmt(raw.LSPValue, 2),
+
+    CurrentLot: raw.CurrentLot || "",
+    Making: raw.Making || "--Select--",
+    PreviousLot: raw.PreviousLot || "",
+
+    ShippingMarks1: raw.ShippingMarks1 || "",
+    ShippingMarks2: raw.ShippingMarks2 || "",
+    ShippingMarks3: raw.ShippingMarks3 || "",
+    ShippingMarks4: raw.ShippingMarks4 || "",
+
+    OptionalCurrency: raw.OptionalChrgeUOM || "--Select--",
+    OptionalRate: raw.OptionalSumExchage || "",
+    OptionalAmountInput: raw.OptionalSumtotal || "",
+    OptionalCharges: raw.Optioncahrge || "",
+
+    ...moduleEditExtras(raw),
+  };
+
+  const hasPacking =
+    Number(raw.OPQty) > 0 ||
+    String(raw.OPUOM || "").trim() !== "" ||
+    Number(raw.IPqty ?? raw.IPQty) > 0 ||
+    String(raw.IPUOM || "").trim() !== "" ||
+    Number(raw.InPqty) > 0 ||
+    String(raw.InPUOM || "").trim() !== "" ||
+    Number(raw.ImPQty) > 0 ||
+    String(raw.ImPUOM || "").trim() !== "";
+  draft.PackingChecked = hasPacking;
+  draft.ShowPacking = hasPacking;
+
+  draft.ShowLotId = !!(
+    raw.CurrentLot?.trim() ||
+    raw.Making?.trim() ||
+    raw.PreviousLot?.trim()
+  );
+
+  draft.ShowShippingMarks = !!(
+    raw.ShippingMarks1?.trim() ||
+    raw.ShippingMarks2?.trim() ||
+    raw.ShippingMarks3?.trim() ||
+    raw.ShippingMarks4?.trim()
+  );
+
+  return draft;
+}
+
+// Item coming from the n8n / LLM response (not saved yet)
+function normalizeIncomingItem(raw) {
+  if (!raw || typeof raw !== "object") return blankItem();
+  const base = { ...blankItem(), ...raw };
+
+  const findValue = (keys) => {
+    for (const k of Object.keys(raw)) {
+      const norm = k.toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (keys.includes(norm) && raw[k] !== "" && raw[k] != null) return raw[k];
+    }
+    return undefined;
+  };
+
+  if (!base.HSCode) {
+    const v = findValue(["code", "hscode", "hs_code", "commoditycode"]);
+    if (v !== undefined) base.HSCode = v;
+  }
+  if (!base.Description) {
+    const v = findValue(["description", "desc"]);
+    if (v !== undefined) base.Description = v;
+  }
+  if (!base.TotalLineAmount) {
+    const v = findValue(["totalvalue", "total_value", "totallineamount"]);
+    if (v !== undefined) base.TotalLineAmount = v;
+  }
+  if (!base.InvoiceQuantity) {
+    const v = findValue(["quantity", "qty"]);
+    if (v !== undefined) base.InvoiceQuantity = v;
+  }
+  if (!base.Country) {
+    const v = findValue(["country", "countryoforigin", "coo"]);
+    if (v !== undefined) base.Country = v;
+  }
+  return base;
+}
+
+// ---------------------------------------------------------------------------
+// Items table (bottom list)
+// ---------------------------------------------------------------------------
+
+const TD = {
+  padding: "7px 9px",
+  borderBottom: `1px solid ${C.panelBorder}`,
+  fontSize: 12,
+  color: C.navy,
+};
+
+function ItemsTableRow({ item, onEdit, onDelete, deleting }) {
+  return (
+    <tr style={{ background: "#fff" }}>
+      <td style={{ ...TD, padding: 6, textAlign: "center" }}>
+        <button
+          type="button"
+          onClick={onDelete}
+          disabled={deleting}
+          title="Delete item"
+          style={{
+            border: "none",
+            background: "#fdeceb",
+            color: C.danger,
+            width: 26,
+            height: 26,
+            borderRadius: 6,
+            cursor: deleting ? "not-allowed" : "pointer",
+            fontSize: 14,
+            fontWeight: 800,
+          }}
+        >
+          x
+        </button>
+      </td>
+      <td style={{ ...TD, padding: 6, textAlign: "center" }}>
+        <button
+          type="button"
+          onClick={onEdit}
+          title="Edit item"
+          style={{
+            border: "none",
+            background: "transparent",
+            color: C.bar,
+            cursor: "pointer",
+            fontWeight: 800,
+            fontSize: 14,
+          }}
+        >
+          ✎
+        </button>
+      </td>
+      <td
+        style={{
+          ...TD,
+          color: item.IsControlled ? C.danger : C.navy,
+          fontWeight: item.IsControlled ? 800 : 400,
+        }}
+      >
+        {item.ItemNo}
+      </td>
+      <td style={TD}>{item.HSCode || "—"}</td>
+      <td style={TD}>{item.Description || "—"}</td>
+      <td style={TD}>{item.Country || "—"}</td>
+      <td style={TD}>{item.Hawb || "—"}</td>
+      {MODULE.hasOutHawb && <td style={TD}>{item.OutHawb || "—"}</td>}
+      <td style={TD}>{item.UnitPriceCurrency || "—"}</td>
+      <td style={TD}>{fmt(item.CIFFOB, 2)}</td>
+      <td style={TD}>{fmt(item.HSQty, 4)}</td>
+      <td style={TD}>{item.HSUOM || "—"}</td>
+      {MODULE.hasTaxTable && <td style={TD}>{fmt(item.GSTAmount, 2)}</td>}
+      <td style={TD}>{fmt(item.TotalLineAmount, 2)}</td>
+    </tr>
+  );
+}
+
+function ItemsTableSection({ items, onEditRow, onDeleteRow, deletingItemNo }) {
+  const columns = [
+    "Delete",
+    "Edit",
+    "Item No",
+    "HS Code",
+    "Description",
+    "COO",
+    MODULE.hasOutHawb ? "In HAWB" : "HAWB",
+    ...(MODULE.hasOutHawb ? ["Out HAWB"] : []),
+    "Currency",
+    "CIF/FOB ($)",
+    "HS Qty",
+    "HS UOM",
+    ...(MODULE.hasTaxTable ? ["GST ($)"] : []),
+    "Line Amount",
+  ];
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div
+        style={{
+          background: C.bar,
+          color: C.barText,
+          fontWeight: 800,
+          fontSize: 11.5,
+          letterSpacing: 0.4,
+          textAlign: "center",
+          padding: "7px 0",
+          borderRadius: 4,
+          marginBottom: 10,
+        }}
+      >
+        ITEM TABLE
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead>
+            <tr>
+              {columns.map((h) => (
+                <th
+                  key={h}
+                  style={{
+                    background: C.tableHead,
+                    color: "#fff",
+                    padding: "8px 9px",
+                    textAlign: "left",
+                    fontSize: 10.5,
+                    letterSpacing: 0.3,
+                  }}
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {items.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={columns.length}
+                  style={{ padding: 14, textAlign: "center", color: C.sub, fontSize: 12.5 }}
+                >
+                  No items added yet.
+                </td>
+              </tr>
+            ) : (
+              items.map((item) => (
+                <ItemsTableRow
+                  key={item.ItemNo}
+                  item={item}
+                  onEdit={() => onEditRow(item.ItemNo)}
+                  onDelete={() => onDeleteRow(item.ItemNo)}
+                  deleting={deletingItemNo === item.ItemNo}
+                />
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function hasSavedItemNo(raw) {
+  if (!raw || typeof raw !== "object") return false;
+  for (const k of Object.keys(raw)) {
+    const norm = k.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (norm === "itemno" && raw[k] !== "" && raw[k] != null) return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Main component — badges, form, table, delete
+// ---------------------------------------------------------------------------
+
+export default function OutItem({ data, onEdit, permitId, user }) {
+  const rawItems = Array.isArray(data.items) ? data.items : [];
+  const cargoHawbList = parseHawbList(data.Hawb);
+  const outHawbList = MODULE.hasOutHawb
+    ? parseHawbList(getOutHawbString(data))
+    : [];
+
+  const hsCodeSuggestions = useHsCodeSuggestions();
+
+  const savedRawItems = rawItems.filter(hasSavedItemNo);
+  const unsavedRawItems = rawItems.filter((i) => !hasSavedItemNo(i));
+
+  const normalizedItems = savedRawItems.map((raw) => {
+    const it = normalizeIncomingItem(raw);
+    const hs = hsCodeSuggestions.find(
+      (h) =>
+        String(h.HSCode || "").toLowerCase() ===
+        String(it.HSCode || "").toLowerCase(),
+    );
+    return { ...it, IsControlled: String(hs?.[MODULE.controlledKey]) === "1" };
+  });
+
+  // { type: "saved", itemNo } | { type: "pending", index } | { type: "blank" }
+  const [selection, setSelection] = useState(() =>
+    unsavedRawItems.length > 0
+      ? { type: "pending", index: 0 }
+      : { type: "blank" },
+  );
+  const [deletingItemNo, setDeletingItemNo] = useState(null);
+  const [invoiceNumbers, setInvoiceNumbers] = useState([]);
+
+  useEffect(() => {
+    if (!permitId) {
+      setInvoiceNumbers([]);
+      return;
+    }
+    API.get(`/getInvoiceByPermitId/${permitId}/`)
+      .then((response) => setInvoiceNumbers(response.data || []))
+      .catch((err) => console.error("Failed to load invoices", err));
+  }, [permitId]);
+
+  const nextItemNo =
+    normalizedItems.length > 0
+      ? Math.max(...normalizedItems.map((i) => Number(i.ItemNo) || 0)) + 1
+      : 1;
+
+  const editingItemNo = selection.type === "saved" ? selection.itemNo : null;
+  const pendingBadgeNo =
+    selection.type === "pending" ? nextItemNo + selection.index : null;
+
+  const loadSavedIntoDraft = async (itemNo) => {
+    const row = savedRawItems.find((i) => i.ItemNo === itemNo);
+    if (!row) return;
+
+    let draft = buildEditDraftFromSavedRow(row, hsCodeSuggestions);
+    const matchedInvoice = invoiceNumbers.find(
+      (inv) => inv.InvoiceNo === draft.InvoiceNo,
+    );
+    if (matchedInvoice) {
+      draft = {
+        ...draft,
+        UnitPriceCurrency: matchedInvoice.TICurrency,
+        ExchangeRate: matchedInvoice.TIExRate,
+      };
+    }
+
+    onEdit(["itemDraft"], draft);
+    setSelection({ type: "saved", itemNo: row.ItemNo });
+
+    if (!permitId) return;
+    try {
+      const res = await API.get(`/getCasc/${permitId}/`);
+      const filtered = (res.data || []).filter(
+        (c) => String(c.ItemNo) === String(row.ItemNo),
+      );
+      const maxCascBoxes = 3;
+      const finalCasc = Array.from({ length: maxCascBoxes }, () => ({
+        code: "",
+        hsQuantity: 0,
+        uom: "",
+        enduserDescription: "",
+        casc: [],
+      }));
+      filtered.forEach((c) => {
+        const cascIndex = parseInt(String(c.CASCId).replace("Casc", ""), 10) - 1;
+        if (cascIndex < 0 || cascIndex >= maxCascBoxes) return;
+        if (!finalCasc[cascIndex].code) {
+          finalCasc[cascIndex] = {
+            ...finalCasc[cascIndex],
+            code: c.ProductCode,
+            hsQuantity: c.Quantity,
+            uom: c.ProductUOM,
+            enduserDescription: c.EndUserDes || "",
+          };
+        }
+        finalCasc[cascIndex].casc.push([
+          c.CascCode1 || "",
+          c.CascCode2 || "",
+          c.CascCode3 || "",
+        ]);
+      });
+      const hasCasc = filtered.length > 0;
+      onEdit(["itemDraft"], {
+        ...draft,
+        ItemCasc: finalCasc,
+        ItemCascChecked: hasCasc,
+        ShowItemCasc: hasCasc,
+      });
+    } catch (err) {
+      console.error("CASC fetch failed", err);
+    }
+  };
+
+  const loadPendingIntoDraft = (index) => {
+    const raw = unsavedRawItems[index];
+    if (!raw) return;
+    onEdit(["itemDraft"], normalizeIncomingItem(raw));
+    setSelection({ type: "pending", index });
+  };
+
+  const handleNewItem = () => {
+    onEdit(["itemDraft"], blankItem());
+    setSelection({ type: "blank" });
+  };
+
+  const itemDraft = {
+    ...blankItem(),
+    ...(selection.type === "pending" && !data.itemDraft
+      ? normalizeIncomingItem(unsavedRawItems[selection.index])
+      : {}),
+    ...(data.itemDraft || {}),
+  };
+
+  const handleSaved = (savedItem) => {
+    const alreadySaved = savedRawItems.some((i) => i.ItemNo === editingItemNo);
+    const nextSavedItems = alreadySaved
+      ? savedRawItems.map((i) => (i.ItemNo === editingItemNo ? savedItem : i))
+      : [...savedRawItems, savedItem];
+
+    const remainingUnsaved =
+      selection.type === "pending"
+        ? unsavedRawItems.filter((_, idx) => idx !== selection.index)
+        : unsavedRawItems;
+
+    onEdit(["items"], [...remainingUnsaved, ...nextSavedItems]);
+    onEdit(["itemDraft"], blankItem());
+    setSelection({ type: "blank" });
+  };
+
+  const handleSavedBadgeClick = (itemNo) => {
+    if (selection.type === "saved" && selection.itemNo === itemNo) {
+      handleNewItem();
+    } else {
+      loadSavedIntoDraft(itemNo);
+    }
+  };
+
+  const handlePendingBadgeClick = (index) => {
+    if (selection.type === "pending" && selection.index === index) {
+      handleNewItem();
+    } else {
+      loadPendingIntoDraft(index);
+    }
+  };
+
+  const handleDeleteRow = async (itemNo) => {
+    setDeletingItemNo(itemNo);
+    try {
+      await API.post("/deleteItem/", { ItemNos: [itemNo], PermitId: permitId });
+      try {
+        await mirrorAfterDelete(permitId);
+      } catch (mirrorErr) {
+        alert(
+          `Warning: Item No ${itemNo} was deleted from CommonItemDtl but FAILED to delete from the module table. ` +
+            `Please contact support or retry.\n\nError: ${mirrorErr.response?.data?.error || mirrorErr.message}`,
+        );
+      }
+      onEdit(
+        ["items"],
+        [
+          ...unsavedRawItems,
+          ...savedRawItems.filter((i) => i.ItemNo !== itemNo),
+        ],
+      );
+      if (editingItemNo === itemNo) {
+        onEdit(["itemDraft"], blankItem());
+        setSelection({ type: "blank" });
+      }
+    } catch (error) {
+      alert(
+        error.response?.data?.error ||
+          "Failed to delete item, check console for details",
+      );
+    } finally {
+      setDeletingItemNo(null);
+    }
+  };
+
+  return (
+    <div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 14,
+        }}
+      >
+        <div
+          style={{
+            background: C.bar,
+            color: C.barText,
+            fontWeight: 800,
+            fontSize: 11.5,
+            letterSpacing: 0.4,
+            padding: "7px 16px",
+            borderRadius: 4,
+          }}
+        >
+          ITEMS
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ color: C.sub, fontWeight: 700, fontSize: 11.5 }}>
+            {normalizedItems.length}{" "}
+            {normalizedItems.length === 1 ? "item" : "items"}
+            {unsavedRawItems.length > 0 &&
+              ` (+${unsavedRawItems.length} pending import)`}
+          </span>
+          <button
+            type="button"
+            onClick={handleNewItem}
+            style={{
+              border: `1.5px dashed ${C.bar}`,
+              background: "transparent",
+              color: C.bar,
+              fontWeight: 700,
+              fontSize: 12,
+              padding: "6px 12px",
+              borderRadius: 6,
+              cursor: "pointer",
+            }}
+          >
+            + New Item
+          </button>
+        </div>
+      </div>
+
+      {(normalizedItems.length > 0 || unsavedRawItems.length > 0) && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+          {normalizedItems.map((it, idx) => (
+            <ItemNumberBadge
+              key={it.ItemNo ?? `saved-${idx}`}
+              number={it.ItemNo ?? idx + 1}
+              active={selection.type === "saved" && selection.itemNo === it.ItemNo}
+              controlled={it.IsControlled}
+              onClick={() => handleSavedBadgeClick(it.ItemNo)}
+            />
+          ))}
+          {unsavedRawItems.map((_, idx) => (
+            <ItemNumberBadge
+              key={`pending-${idx}`}
+              number={nextItemNo + idx}
+              active={selection.type === "pending" && selection.index === idx}
+              pending
+              onClick={() => handlePendingBadgeClick(idx)}
+            />
+          ))}
+        </div>
+      )}
+
+      <ItemFieldsEditor
+        item={itemDraft}
+        path={["itemDraft"]}
+        onEdit={onEdit}
+        invoiceNumbers={invoiceNumbers}
+        declarationType={data.DeclarationType}
+        totalGrossWeight={data.TotalGrossWeight}
+        permitId={permitId}
+        user={user}
+        itemNumber={editingItemNo || pendingBadgeNo || nextItemNo}
+        editingItemNo={editingItemNo}
+        onSaved={handleSaved}
+        cargoHawbList={cargoHawbList}
+        outHawbList={outHawbList}
+        moduleCtx={{ data }}
+      />
+
+      <ItemsTableSection
+        items={normalizedItems}
+        onEditRow={handleSavedBadgeClick}
+        onDeleteRow={handleDeleteRow}
+        deletingItemNo={deletingItemNo}
+      />
+    </div>
+  );
+}
