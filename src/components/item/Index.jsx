@@ -1,6 +1,6 @@
-import InpaymentItem from "./InpaymentItem";
-import InnonpaymentItem from "./InnonpaymentItem";
-import OutItem from "./OutItem";
+import InpaymentItem from "./Inpaymentitem";
+import InnonpaymentItem from "./Innonpaymentitem";
+import OutItem from "./Outitem";
 
 // Shows ONLY the selected module's item page.
 export default function ItemsTabContent({ activeModule, ...props }) {
