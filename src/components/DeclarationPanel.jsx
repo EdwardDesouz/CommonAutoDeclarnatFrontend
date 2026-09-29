@@ -15,7 +15,7 @@ import CargoTabContent, {
   seedHawbDefault,
   seedTotalGrossWeightDefault,
 } from "./CargoCommon";
-import CpcTabContent, { buildCpcPayload } from "./CpcCommon";
+import CpcTabContent, { buildCpcPayload } from "./Cpccommon";
 import { getModuleConfig } from "./moduleConfig";
 import { SummaryTabContent } from "./SummaryCommon";
 import { C } from "./Theme";
