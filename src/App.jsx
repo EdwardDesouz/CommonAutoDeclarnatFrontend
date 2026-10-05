@@ -1,13 +1,15 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import EmailSidebar from "./components/EmailSidebar";
 import PdfViewer from "./components/PdfViewer";
 import DeclarationPanel from "./components/DeclarationPanel";
+import { mapResponse, moduleMismatch } from "./mappers/mapResponse";
 import {
   fetchEmails,
   fetchEmailDetail,
   fetchAttachments,
   notifyN8n,
   dismissEmail,
+  completeEmail,
 } from "./api/client";
 
 const POLL_INTERVAL_MS = 5000;
@@ -21,9 +23,17 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [attachments, setAttachments] = useState([]);
-  const [declaration, setDeclaration] = useState(null);
+  const [rawDeclaration, setRawDeclaration] = useState(null);
+  const [moduleType, setModuleType] = useState(null);
   const [busy, setBusy] = useState(false);
   const [syncedAt, setSyncedAt] = useState(new Date());
+  const activeRequest = useRef(null);
+
+  // Memoized so the panel's form state is not reset on every render
+  const declaration = useMemo(
+    () => mapResponse(moduleType, rawDeclaration),
+    [moduleType, rawDeclaration],
+  );
 
   const loadEmails = useCallback(async () => {
     try {
@@ -43,43 +53,72 @@ export default function App() {
     return () => clearInterval(interval);
   }, [loadEmails]);
 
-  const totalPending = accounts.reduce(
-    (sum, acct) => sum + (acct.count || 0),
-    0,
-  );
+  const totalPending = accounts.reduce((sum, a) => sum + (a.count || 0), 0);
+
+  const resetSelection = () => {
+    activeRequest.current = null;
+    setSelectedEmail(null);
+    setAttachments([]);
+    setRawDeclaration(null);
+    setModuleType(null);
+    setBusy(false);
+  };
 
   const handleSelect = async (email) => {
+    activeRequest.current = email.id;
     setAttachments([]);
-    setDeclaration(null);
+    setRawDeclaration(null);
+    setModuleType(null);
     setBusy(true);
+
+    let mod = email.module_type || null;
 
     try {
       const [detail, attData] = await Promise.all([
         fetchEmailDetail(email.id),
         fetchAttachments(email.id),
       ]);
+      if (activeRequest.current !== email.id) return;
+      mod = detail.module_type || mod;
+      setModuleType(mod);
       setSelectedEmail({ ...email, ...detail, body_preview: detail.body });
       setAttachments(attData.attachments || attData || []);
     } catch (err) {
       console.error("Failed to load email detail/attachments", err);
-      setSelectedEmail(email);
-      setBusy(false);
+      if (activeRequest.current === email.id) {
+        setSelectedEmail(email);
+        setBusy(false);
+      }
       return;
     }
 
     try {
       const n8nResult = await notifyN8n(email.id);
+      if (activeRequest.current !== email.id) return;
       console.log("n8n raw response:", n8nResult);
-      setDeclaration(n8nResult?.n8n_response || null);
+
+      const raw = n8nResult?.n8n_response || null;
+      const warn = moduleMismatch(mod, raw);
+      if (warn) console.warn(warn);
+
+      setRawDeclaration(raw);
     } catch (err) {
-      console.error("n8n declaration extraction failed or timed out", err);
-      setDeclaration(null);
+      if (activeRequest.current !== email.id) return;
+      if (err.response?.data?.code !== "NO_PDF") {
+        console.error(
+          "n8n declaration extraction failed:",
+          err.message,
+          "| status:", err.response?.status,
+          "| body:", err.response?.data,
+        );
+      }
+      setRawDeclaration(null);
     } finally {
-      setBusy(false);
+      if (activeRequest.current === email.id) setBusy(false);
     }
   };
 
-  const handleDismiss = async (id) => {
+  const removeFromList = (id) =>
     setAccounts((prev) =>
       prev.map((acct) => ({
         ...acct,
@@ -87,8 +126,10 @@ export default function App() {
         count: acct.emails.filter((e) => e.id !== id).length,
       })),
     );
-    setSelectedEmail((current) => (current?.id === id ? null : current));
 
+  const handleDismiss = async (id) => {
+    removeFromList(id);
+    setSelectedEmail((cur) => (cur?.id === id ? null : cur));
     try {
       await dismissEmail(id);
     } catch (err) {
@@ -97,37 +138,19 @@ export default function App() {
     }
   };
 
-  const handleDeselect = () => {
-    setSelectedEmail(null);
-    setAttachments([]);
-    setDeclaration(null);
-  };
-
-  // Called by DeclarationPanel after a successful Save Permit. No backend
-  // "mark as saved" endpoint exists yet, so this just logs for now — see
-  // note below.
-  // App.jsx
   const handleSaveDeclaration = async (savedData, pageIndex) => {
     console.log("Declaration saved:", savedData, "pageIndex:", pageIndex);
     if (!selectedEmail) return;
     const id = selectedEmail.id;
 
-    setAccounts((prev) =>
-      prev.map((acct) => ({
-        ...acct,
-        emails: acct.emails.filter((e) => e.id !== id),
-        count: acct.emails.filter((e) => e.id !== id).length,
-      })),
-    );
-    setSelectedEmail(null);
-    setAttachments([]);
-    setDeclaration(null);
+    removeFromList(id);
+    resetSelection();
 
     try {
       await completeEmail(id);
     } catch (err) {
       console.error("Failed to persist saved-permit status:", err);
-      loadEmails(); 
+      loadEmails();
     }
   };
 
@@ -159,12 +182,13 @@ export default function App() {
         />
         <PdfViewer email={selectedEmail} attachments={attachments} />
         <DeclarationPanel
+          moduleType={moduleType}
           email={selectedEmail}
           declaration={declaration}
           busy={busy}
           onSave={handleSaveDeclaration}
           onDismissEmail={handleDismiss}
-          onDeselectEmail={handleDeselect}
+          onDeselectEmail={resetSelection}
         />
       </div>
     </div>

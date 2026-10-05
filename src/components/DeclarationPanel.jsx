@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { FaSearch, FaPlus } from "react-icons/fa";
 import StatusStamp from "./StatusStamp";
 import API from "../api/api";
@@ -19,11 +19,8 @@ import CpcTabContent, { buildCpcPayload } from "./CpcCommon";
 import { getModuleConfig } from "./moduleConfig";
 import { SummaryTabContent } from "./SummaryCommon";
 import { C } from "./Theme";
+import { mapResponse } from "../mappers/mapResponse";
 
-// Re-exported so any other file still doing `import { C } from "./DeclarationPanel"`
-// keeps working. The actual definition now lives in theme.js — this avoids a
-// circular import now that DeclarationPanel also imports from SummaryCommon,
-// which itself needs C.
 export { C };
 
 const ALL_DECLARATION_MODULES = ["inpayment", "innonpayment", "out"];
@@ -2100,6 +2097,21 @@ export default function DeclarationPanel({
   onDismissEmail,
   onDeselectEmail,
 }) {
+  // 1. Module state first (everything below depends on it)
+  const [activeModule, setActiveModule] = useState(null);
+  const moduleConfig = activeModule ? getModuleConfig(activeModule) : null;
+
+  const mappedDeclaration = useMemo(
+    () => (activeModule ? mapResponse(activeModule, declaration) : null),
+    [activeModule, declaration],
+  );
+
+  // ADD THE THREE LINES HERE
+  console.log("[panel] module:", activeModule);
+  console.log("[panel] declaration prop:", declaration);
+  console.log("[panel] mapped:", mappedDeclaration);
+
+  // 2. Then the builders
   const buildData = (raw) =>
     seedHawbDefault(
       seedTotalGrossWeightDefault(
@@ -2113,22 +2125,20 @@ export default function DeclarationPanel({
         ),
       ),
     );
-  const buildAll = (raw) => {
-    const rawList = normalizeDeclarations(raw);
-    return rawList.map((r) => buildData(r ?? blankDeclaration()));
-  };
+    
+const buildAll = (raw) => {
+  const rawList = normalizeDeclarations(raw);
+  return rawList.map((r) =>
+    buildData({ ...blankDeclaration(), ...(r || {}) }),
+  );
+};
 
-  const [dataList, setDataList] = useState(() => buildAll(declaration));
+  // 3. Then the state that uses them
+  const [dataList, setDataList] = useState(() => buildAll(mappedDeclaration));
   const [pageIndex, setPageIndex] = useState(0);
   const [activeTab, setActiveTab] = useState("header");
-
   const [declareMode, setDeclareMode] = useState(null);
 
-  // ── UPDATED: touch user now comes straight from the email's own mailbox
-  // (email.touchUsername, resolved backend-side from MAILBOXES by
-  // mailbox_id — see server.js/mailboxes.js), not from any account-config
-  // lookup keyed by mailbox username. DEFAULT_TOUCH_USER is only a fallback
-  // for the rare case the backend couldn't resolve a mailbox.
   const touchUser = email?.touch_username || "";
 
   if (!touchUser && email) {
@@ -2137,19 +2147,13 @@ export default function DeclarationPanel({
     );
   }
 
-  // ── UPDATED: module selection is now fully manual via the checkbox — no
-  // default module, no dependency on which mailbox/account the email came
-  // from. Nothing is selected until the user picks Inpayment / InNonPayment
-  // / Out; moduleConfig stays null until then, gating the New button and
-  // the rest of the tabs (see below).
-  const [activeModule, setActiveModule] = useState(null);
-  const moduleConfig = activeModule ? getModuleConfig(activeModule) : null;
-
-  // Reset the module choice whenever a different email is opened — the
-  // user has to pick again for each new declaration.
   useEffect(() => {
-    setActiveModule(null);
-  }, [email?.accountId]);
+    const pre =
+      email?.module_type && !email.module_type_needs_confirmation
+        ? email.module_type
+        : null;
+    setActiveModule(pre);
+  }, [email?.id]);
   // ─────────────────────────────────────────────────────────────────────
 
   const buildInitialIdentities = (list) =>
@@ -2171,21 +2175,21 @@ export default function DeclarationPanel({
     });
 
   const [pageIdentities, setPageIdentities] = useState(() =>
-    buildInitialIdentities(buildAll(declaration)),
+    buildInitialIdentities(buildAll(mappedDeclaration)),
   );
   const [generatingNew, setGeneratingNew] = useState(false);
 
-  const originalDataRef = useRef(buildAll(declaration));
+  const originalDataRef = useRef(buildAll(mappedDeclaration));
 
   useEffect(() => {
-    const list = buildAll(declaration);
+    const list = buildAll(mappedDeclaration);
     setDataList(list);
     originalDataRef.current = list;
     setPageIndex(0);
     setActiveTab("header");
     setPageIdentities(buildInitialIdentities(list));
     setGeneratingNew(false);
-  }, [declaration, email?.id]);
+  }, [mappedDeclaration, email?.id]);
 
   // ── MessageType auto-syncs with the active module ─────────────────────
   // This is the "checkbox click → automatic condition change" cascade:

@@ -11,16 +11,23 @@ function timeAgo(dateStr) {
   return `${Math.round(hrs / 24)}d ago`;
 }
 
+function sortNewestFirst(emails = []) {
+  return [...emails].sort(
+    (a, b) =>
+      (new Date(b.received_date).getTime() || 0) -
+      (new Date(a.received_date).getTime() || 0),
+  );
+}
+
 export default function EmailSidebar({
   accounts = [],
   activeId,
   onSelect,
-  onDismiss,
   loading,
 }) {
   const [expanded, setExpanded] = useState(null);
 
-  const totalCount = accounts.reduce((sum, a) => sum + (a.count || 0), 0);
+  const totalCount = accounts.reduce((sum, a) => sum + a.emails.length, 0);
 
   return (
     <aside className="sidebar">
@@ -54,7 +61,7 @@ export default function EmailSidebar({
               }
             >
               <span className="account-name">{acct.username}</span>
-              <span className="account-badge">{acct.count}</span>
+              <span className="account-badge">{acct.emails.length}</span>
               <span
                 className={`account-chevron ${expanded === acct.mailbox_id ? "open" : ""}`}
               >
@@ -67,22 +74,11 @@ export default function EmailSidebar({
                 {acct.emails.length === 0 ? (
                   <div className="account-empty">No unread emails</div>
                 ) : (
-                  acct.emails.map((email) => (
+                  sortNewestFirst(acct.emails).map((email) => (
                     <div
                       key={email.id}
                       className={`email-item ${activeId === email.id ? "active" : ""}`}
                     >
-                      <button
-                        className="email-item-dismiss"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDismiss?.(email.id);
-                        }}
-                        aria-label="Dismiss"
-                      >
-                        ✕
-                      </button>
-
                       <button
                         className="email-item-body"
                         onClick={() =>

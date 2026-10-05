@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from "react";
 import { FaSearch, FaTrash } from "react-icons/fa";
 import API from "../../api/api";
 
-
 const C = {
   panelBorder: "#c2d7e8",
   bar: "#0f3c52",
@@ -438,7 +437,11 @@ function moduleExtraPayload(item) {
     TexQuotaUOM: item.TextileQuotaUOM || "",
     CerInvNo: item.CerInvNo || "",
     CerInvDate: item.CerInvDate || "",
-    OriginOfCer: [item.OriginCriterion1, item.OriginCriterion2, item.OriginCriterion3]
+    OriginOfCer: [
+      item.OriginCriterion1,
+      item.OriginCriterion2,
+      item.OriginCriterion3,
+    ]
       .map((s) => (s || "").trim())
       .filter(Boolean)
       .join(","),
@@ -532,10 +535,18 @@ function renderModuleSections({ item, set, packUomOptions, ctx }) {
               />
             </div>
           </Field>
-          {inp("CifCerValue", "CIF/FOB Item Value On Certificate", { placeholder: "0.00" })}
-          {inp("ManuDate", "Manufacturing Cost Date", { placeholder: "DD/MM/YYYY", upper: false })}
+          {inp("CifCerValue", "CIF/FOB Item Value On Certificate", {
+            placeholder: "0.00",
+          })}
+          {inp("ManuDate", "Manufacturing Cost Date", {
+            placeholder: "DD/MM/YYYY",
+            upper: false,
+          })}
           {inp("CerInvNo", "Invoice Number")}
-          {inp("CerInvDate", "Invoice Date", { placeholder: "DD/MM/YYYY", upper: false })}
+          {inp("CerInvDate", "Invoice Date", {
+            placeholder: "DD/MM/YYYY",
+            upper: false,
+          })}
           {inp("HsCodeCer", "HS Code On Certificate")}
           {inp("PercentageOrigin", "Percentage Content Of Origin Criterion")}
         </Grid>
@@ -841,7 +852,9 @@ function SearchPopup({ title, data = [], onClose, onSelect, columns }) {
             fontSize: 12.5,
           }}
         />
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+        <table
+          style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}
+        >
           <thead>
             <tr>
               {columns.map((col) => (
@@ -866,7 +879,9 @@ function SearchPopup({ title, data = [], onClose, onSelect, columns }) {
                 key={idx}
                 onClick={() => onSelect(item)}
                 style={{ cursor: "pointer" }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = C.rowAlt)}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.background = C.rowAlt)
+                }
                 onMouseLeave={(e) =>
                   (e.currentTarget.style.background = "transparent")
                 }
@@ -1296,14 +1311,13 @@ function ItemFieldsEditor({
     ? item.Hawb || ""
     : cargoHawbList.length > 1
       ? item.Hawb || cargoHawbList[0] || ""
-      : cargoHawbList[0] || item.Hawb || "";
+      : cargoHawbList[0] || "";
 
   const effectiveOutHawb = editingItemNo
     ? item.OutHawb || ""
     : outHawbList.length > 1
       ? item.OutHawb || outHawbList[0] || ""
-      : outHawbList[0] || item.OutHawb || "";
-
+      : outHawbList[0] || "";
   // ---------------- HS code ----------------
 
   const applyHsLogic = (hsRow) => {
@@ -1484,6 +1498,16 @@ function ItemFieldsEditor({
       set("ExchangeRate", "");
     }
   };
+
+  useEffect(() => {
+    if (!item.InvoiceNo) return;
+    const sel = invoiceNumbers.find((i) => i.InvoiceNo === item.InvoiceNo);
+    if (!sel) return;
+    if (item.ExchangeRate !== sel.TIExRate) set("ExchangeRate", sel.TIExRate);
+    if (item.UnitPriceCurrency !== sel.TICurrency)
+      set("UnitPriceCurrency", sel.TICurrency);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoiceNumbers, item.InvoiceNo]);
 
   useEffect(() => {
     const matched = invoiceNumbers.find((i) => i.InvoiceNo === item.InvoiceNo);
@@ -1675,8 +1699,7 @@ function ItemFieldsEditor({
     if (!item.Description?.trim())
       errors.Description = "FILL HSCODE DESCRIPTION";
     if (!item.Country?.trim()) errors.Country = "FILL COO";
-    if (MODULE.requireBrand && !item.Brand?.trim())
-      errors.Brand = "FILL BRAND";
+    if (MODULE.requireBrand && !item.Brand?.trim()) errors.Brand = "FILL BRAND";
     if (item.HSQty === "" || Number(item.HSQty) === 0)
       errors.HSQty = "FILL HS QUANTITY";
     if (!item.HSUOM) errors.HSUOM = "PLEASE CHECK UOM";
@@ -1943,7 +1966,10 @@ function ItemFieldsEditor({
         <Grid cols={2}>
           <Field label={MODULE.hasOutHawb ? "In HAWB / HBL" : "HAWB / HBL"}>
             {editingItemNo ? (
-              <EditableInput value={item.Hawb} onChange={(v) => set("Hawb", v)} />
+              <EditableInput
+                value={item.Hawb}
+                onChange={(v) => set("Hawb", v)}
+              />
             ) : cargoHawbList.length > 1 ? (
               <EditableSelect
                 value={effectiveHawb}
@@ -1951,7 +1977,11 @@ function ItemFieldsEditor({
                 options={cargoHawbList}
               />
             ) : (
-              <EditableInput value={effectiveHawb} disabled onChange={() => {}} />
+              <EditableInput
+                value={effectiveHawb}
+                disabled
+                onChange={() => {}}
+              />
             )}
           </Field>
           <Field label="HS Code" error={fieldErrors.HSCode}>
@@ -2227,7 +2257,10 @@ function ItemFieldsEditor({
 
         <div style={{ marginTop: 10 }}>
           <Grid cols={2}>
-            <Field label="Total Line Amount" error={fieldErrors.TotalLineAmount}>
+            <Field
+              label="Total Line Amount"
+              error={fieldErrors.TotalLineAmount}
+            >
               <EditableInput
                 value={item.TotalLineAmount}
                 onChange={(v) => set("TotalLineAmount", v)}
@@ -2256,7 +2289,13 @@ function ItemFieldsEditor({
       {MODULE.hasTaxTable && (
         <ItemSection title="Duty & Tax">
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                fontSize: 12,
+              }}
+            >
               <thead>
                 <tr>
                   {["Item", "Rate", "UOM", "Amount ($)"].map((h) => (
@@ -2278,11 +2317,15 @@ function ItemFieldsEditor({
               <tbody>
                 <tr style={{ background: C.rowAlt }}>
                   <td style={{ padding: "7px 9px" }}>
-                    <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <label
+                      style={{ display: "flex", alignItems: "center", gap: 6 }}
+                    >
                       <input
                         type="checkbox"
                         checked={item.GSTRecalculate}
-                        onChange={(e) => set("GSTRecalculate", e.target.checked)}
+                        onChange={(e) =>
+                          set("GSTRecalculate", e.target.checked)
+                        }
                         style={{ accentColor: C.bar }}
                       />
                       GST (recalc)
@@ -2306,8 +2349,18 @@ function ItemFieldsEditor({
                     />
                   </td>
                 </tr>
-                {taxInputRow("Excise Duty", "ExciseDutyRate", "ExciseDutyUOM", "ExciseDutyAmount")}
-                {taxInputRow("Customs Duty", "CustomsDutyRate", "CustomsDutyUOM", "CustomsDutyAmount")}
+                {taxInputRow(
+                  "Excise Duty",
+                  "ExciseDutyRate",
+                  "ExciseDutyUOM",
+                  "ExciseDutyAmount",
+                )}
+                {taxInputRow(
+                  "Customs Duty",
+                  "CustomsDutyRate",
+                  "CustomsDutyUOM",
+                  "CustomsDutyAmount",
+                )}
                 <tr>
                   <td style={{ padding: "7px 9px" }}>Other Tax</td>
                   <td style={{ padding: 6 }}>
@@ -2334,7 +2387,14 @@ function ItemFieldsEditor({
             </table>
           </div>
           {gstWarning && (
-            <div style={{ color: C.danger, fontSize: 11, fontWeight: 700, marginTop: 6 }}>
+            <div
+              style={{
+                color: C.danger,
+                fontSize: 11,
+                fontWeight: 700,
+                marginTop: 6,
+              }}
+            >
               {gstWarning}
             </div>
           )}
@@ -2359,10 +2419,21 @@ function ItemFieldsEditor({
             onChange={toggleShippingMarks}
             label="Shipping Marks"
           />
-          <Checkbox checked={item.ShowLotId} onChange={toggleLotId} label="Lot ID" />
+          <Checkbox
+            checked={item.ShowLotId}
+            onChange={toggleLotId}
+            label="Lot ID"
+          />
         </div>
         {fieldErrors.ItemCasc && (
-          <div style={{ color: C.danger, fontSize: 10, fontWeight: 700, marginTop: 6 }}>
+          <div
+            style={{
+              color: C.danger,
+              fontSize: 10,
+              fontWeight: 700,
+              marginTop: 6,
+            }}
+          >
             {fieldErrors.ItemCasc}
           </div>
         )}
@@ -2427,7 +2498,9 @@ function ItemFieldsEditor({
             >
               <Grid cols={4}>
                 <Field label={`Product Code ${cIndex + 1}`}>
-                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <div
+                    style={{ display: "flex", gap: 6, alignItems: "center" }}
+                  >
                     <FaSearch
                       style={{ cursor: "pointer", flexShrink: 0, color: C.bar }}
                       onClick={() => handleCascSearchClick(cIndex)}
@@ -2443,7 +2516,9 @@ function ItemFieldsEditor({
                   <div style={{ display: "flex", gap: 6 }}>
                     <EditableInput
                       value={box.hsQuantity}
-                      onChange={(v) => handleCascFieldChange(cIndex, "hsQuantity", v)}
+                      onChange={(v) =>
+                        handleCascFieldChange(cIndex, "hsQuantity", v)
+                      }
                     />
                     <button
                       type="button"
@@ -2472,7 +2547,10 @@ function ItemFieldsEditor({
                   />
                 </Field>
                 <div style={{ display: "flex", alignItems: "flex-end" }}>
-                  <AddBtn onClick={() => addCascRow(cIndex)} label="+ CASC Row" />
+                  <AddBtn
+                    onClick={() => addCascRow(cIndex)}
+                    label="+ CASC Row"
+                  />
                 </div>
               </Grid>
 
@@ -2505,23 +2583,31 @@ function ItemFieldsEditor({
               )}
 
               <div style={{ overflowX: "auto", marginTop: 8 }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    fontSize: 12,
+                  }}
+                >
                   <thead>
                     <tr>
-                      {["CASC Code 1", "CASC Code 2", "CASC Code 3", ""].map((h) => (
-                        <th
-                          key={h}
-                          style={{
-                            background: C.tableHead,
-                            color: "#fff",
-                            padding: "6px 8px",
-                            fontSize: 10,
-                            textAlign: "left",
-                          }}
-                        >
-                          {h}
-                        </th>
-                      ))}
+                      {["CASC Code 1", "CASC Code 2", "CASC Code 3", ""].map(
+                        (h) => (
+                          <th
+                            key={h}
+                            style={{
+                              background: C.tableHead,
+                              color: "#fff",
+                              padding: "6px 8px",
+                              fontSize: 10,
+                              textAlign: "left",
+                            }}
+                          >
+                            {h}
+                          </th>
+                        ),
+                      )}
                     </tr>
                   </thead>
                   <tbody>
@@ -2533,7 +2619,12 @@ function ItemFieldsEditor({
                               <EditableInput
                                 value={cell}
                                 onChange={(v) =>
-                                  handleCascTableChange(cIndex, rowIndex, colIndex, v)
+                                  handleCascTableChange(
+                                    cIndex,
+                                    rowIndex,
+                                    colIndex,
+                                    v,
+                                  )
                                 }
                               />
                             </td>
@@ -2586,27 +2677,30 @@ function ItemFieldsEditor({
       {item.ShowShippingMarks && (
         <ItemSection title="Shipping Marks">
           <Grid cols={4}>
-            {["ShippingMarks1", "ShippingMarks2", "ShippingMarks3", "ShippingMarks4"].map(
-              (key, i) => (
-                <Field label={`Marks ${i + 1}`} key={key}>
-                  <textarea
-                    value={item[key] ?? ""}
-                    onChange={(e) => set(key, e.target.value.toUpperCase())}
-                    style={{
-                      border: `1px solid ${C.inputBorder}`,
-                      borderRadius: 4,
-                      padding: "6px 8px",
-                      fontSize: 11.5,
-                      width: "100%",
-                      minHeight: 50,
-                      resize: "vertical",
-                      boxSizing: "border-box",
-                      fontFamily: "inherit",
-                    }}
-                  />
-                </Field>
-              ),
-            )}
+            {[
+              "ShippingMarks1",
+              "ShippingMarks2",
+              "ShippingMarks3",
+              "ShippingMarks4",
+            ].map((key, i) => (
+              <Field label={`Marks ${i + 1}`} key={key}>
+                <textarea
+                  value={item[key] ?? ""}
+                  onChange={(e) => set(key, e.target.value.toUpperCase())}
+                  style={{
+                    border: `1px solid ${C.inputBorder}`,
+                    borderRadius: 4,
+                    padding: "6px 8px",
+                    fontSize: 11.5,
+                    width: "100%",
+                    minHeight: 50,
+                    resize: "vertical",
+                    boxSizing: "border-box",
+                    fontFamily: "inherit",
+                  }}
+                />
+              </Field>
+            ))}
           </Grid>
         </ItemSection>
       )}
@@ -2898,7 +2992,9 @@ function ItemsTableSection({ items, onEditRow, onDeleteRow, deletingItemNo }) {
         ITEM TABLE
       </div>
       <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+        <table
+          style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}
+        >
           <thead>
             <tr>
               {columns.map((h) => (
@@ -2923,7 +3019,12 @@ function ItemsTableSection({ items, onEditRow, onDeleteRow, deletingItemNo }) {
               <tr>
                 <td
                   colSpan={columns.length}
-                  style={{ padding: 14, textAlign: "center", color: C.sub, fontSize: 12.5 }}
+                  style={{
+                    padding: 14,
+                    textAlign: "center",
+                    color: C.sub,
+                    fontSize: 12.5,
+                  }}
                 >
                   No items added yet.
                 </td>
@@ -2961,10 +3062,14 @@ function hasSavedItemNo(raw) {
 
 export default function OutItem({ data, onEdit, permitId, user }) {
   const rawItems = Array.isArray(data.items) ? data.items : [];
-  const cargoHawbList = parseHawbList(data.Hawb);
-  const outHawbList = MODULE.hasOutHawb
-    ? parseHawbList(getOutHawbString(data))
-    : [];
+
+  const modeOn = (m) => !!m && !/^\s*(--select--|n\s*:)/i.test(String(m));
+  const inwardOn = modeOn(data.InwardTransportMode);
+  const outwardOn = modeOn(data.OutwardTransportMode);
+
+  const cargoHawbList = inwardOn ? parseHawbList(data.Hawb) : [];
+  const outHawbList =
+    MODULE.hasOutHawb && outwardOn ? parseHawbList(getOutHawbString(data)) : [];
 
   const hsCodeSuggestions = useHsCodeSuggestions();
 
@@ -3043,7 +3148,8 @@ export default function OutItem({ data, onEdit, permitId, user }) {
         casc: [],
       }));
       filtered.forEach((c) => {
-        const cascIndex = parseInt(String(c.CASCId).replace("Casc", ""), 10) - 1;
+        const cascIndex =
+          parseInt(String(c.CASCId).replace("Casc", ""), 10) - 1;
         if (cascIndex < 0 || cascIndex >= maxCascBoxes) return;
         if (!finalCasc[cascIndex].code) {
           finalCasc[cascIndex] = {
@@ -3207,12 +3313,21 @@ export default function OutItem({ data, onEdit, permitId, user }) {
       </div>
 
       {(normalizedItems.length > 0 || unsavedRawItems.length > 0) && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 8,
+            marginBottom: 14,
+          }}
+        >
           {normalizedItems.map((it, idx) => (
             <ItemNumberBadge
               key={it.ItemNo ?? `saved-${idx}`}
               number={it.ItemNo ?? idx + 1}
-              active={selection.type === "saved" && selection.itemNo === it.ItemNo}
+              active={
+                selection.type === "saved" && selection.itemNo === it.ItemNo
+              }
               controlled={it.IsControlled}
               onClick={() => handleSavedBadgeClick(it.ItemNo)}
             />

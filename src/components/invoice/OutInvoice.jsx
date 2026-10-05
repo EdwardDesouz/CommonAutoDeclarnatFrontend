@@ -208,7 +208,12 @@ function InvoiceSelect({ value, onChange, options }) {
 // ---------------------------------------------------------------------------
 
 function OutPartiesBlock({ data }) {
-  const exporter = data.Exporter || { Code: "", CRUEI: "", Name: "", Name1: "" };
+  const exporter = data.Exporter || {
+    Code: "",
+    CRUEI: "",
+    Name: "",
+    Name1: "",
+  };
   return (
     <div
       style={{
@@ -219,10 +224,24 @@ function OutPartiesBlock({ data }) {
         background: "#fafcfd",
       }}
     >
-      <div style={{ color: C.navy, fontWeight: 800, fontSize: 11.5, letterSpacing: 0.3, marginBottom: 6 }}>
+      <div
+        style={{
+          color: C.navy,
+          fontWeight: 800,
+          fontSize: 11.5,
+          letterSpacing: 0.3,
+          marginBottom: 6,
+        }}
+      >
         Exporter
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(4, 1fr)",
+          gap: 10,
+        }}
+      >
         <InvoiceField label="Code">
           <EditableInput compact value={exporter.Code} disabled />
         </InvoiceField>
@@ -254,8 +273,19 @@ function OutDetailsBlock({ data, onEdit, serialNumber }) {
   const handleCurrencyChange = (name) => {
     const match = currencyOptions.find((c) => c.Currency === name);
     onEdit([...path, "invoiceValue", "currency"], name);
-    onEdit([...path, "invoiceValue", "exRate"], match ? String(match.CurrencyRate) : "");
+    onEdit(
+      [...path, "invoiceValue", "exRate"],
+      match ? String(match.CurrencyRate) : "",
+    );
   };
+
+  useEffect(() => {
+    const cur = invoice.invoiceValue.currency;
+    if (!cur || invoice.invoiceValue.exRate || !currencyOptions.length) return;
+    const match = currencyOptions.find((c) => c.Currency === cur);
+    if (match)
+      onEdit([...path, "invoiceValue", "exRate"], String(match.CurrencyRate));
+  }, [invoice.invoiceValue.currency, currencyOptions]);
 
   // ── OUT CALCULATION ───────────────────────────────────────────────────
   // Invoice ($) = amount × exRate ;  CIF Value = Invoice ($)
@@ -336,16 +366,28 @@ function OutDetailsBlock({ data, onEdit, serialNumber }) {
         <InvoiceField label="Supplier Importer Relationship">
           <InvoiceSelect
             value={invoice.supplierImporterRelationship}
-            onChange={(v) => onEdit([...path, "supplierImporterRelationship"], v)}
+            onChange={(v) =>
+              onEdit([...path, "supplierImporterRelationship"], v)
+            }
             options={RELATIONSHIP_OPTIONS}
           />
         </InvoiceField>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 18 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            paddingTop: 18,
+          }}
+        >
           <input
             type="checkbox"
             checked={!!invoice.preferentialDutyRateIndicator}
             onChange={(e) =>
-              onEdit([...path, "preferentialDutyRateIndicator"], e.target.checked)
+              onEdit(
+                [...path, "preferentialDutyRateIndicator"],
+                e.target.checked,
+              )
             }
             style={{ width: 16, height: 16, accentColor: C.bar }}
           />
@@ -366,11 +408,13 @@ function OutDetailsBlock({ data, onEdit, serialNumber }) {
         >
           <thead>
             <tr>
-              {["Item", "Currency", "Ex.Rate", "Amount", "Amount ($)"].map((h) => (
-                <th key={h} style={th}>
-                  {h}
-                </th>
-              ))}
+              {["Item", "Currency", "Ex.Rate", "Amount", "Amount ($)"].map(
+                (h) => (
+                  <th key={h} style={th}>
+                    {h}
+                  </th>
+                ),
+              )}
             </tr>
           </thead>
           <tbody>
@@ -421,7 +465,9 @@ function OutDetailsBlock({ data, onEdit, serialNumber }) {
               </td>
             </tr>
             <tr>
-              <td style={{ padding: "7px 9px", fontSize: 12, color: C.navy }}>CIF Value</td>
+              <td style={{ padding: "7px 9px", fontSize: 12, color: C.navy }}>
+                CIF Value
+              </td>
               <td colSpan={3} />
               <td style={{ padding: 6 }}>
                 <EditableInput
@@ -487,7 +533,9 @@ function InvoiceTableSection({ invoices, onEditRow, onDeleteRow, deleting }) {
         INVOICE TABLE
       </div>
       <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+        <table
+          style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}
+        >
           <thead>
             <tr>
               {columns.map((h) => (
@@ -502,14 +550,22 @@ function InvoiceTableSection({ invoices, onEditRow, onDeleteRow, deleting }) {
               <tr>
                 <td
                   colSpan={columns.length}
-                  style={{ padding: 14, textAlign: "center", color: C.sub, fontSize: 12.5 }}
+                  style={{
+                    padding: 14,
+                    textAlign: "center",
+                    color: C.sub,
+                    fontSize: 12.5,
+                  }}
                 >
                   No invoices added yet.
                 </td>
               </tr>
             ) : (
               invoices.map((inv, i) => (
-                <tr key={inv.sNo ?? i} style={{ background: i % 2 ? C.rowAlt : "#fff" }}>
+                <tr
+                  key={inv.sNo ?? i}
+                  style={{ background: i % 2 ? C.rowAlt : "#fff" }}
+                >
                   <td style={{ ...td, padding: 6, textAlign: "center" }}>
                     <button
                       type="button"
@@ -554,7 +610,9 @@ function InvoiceTableSection({ invoices, onEditRow, onDeleteRow, deleting }) {
                   <td style={td}>{inv.invoiceDate || "—"}</td>
                   <td style={td}>{inv.invoiceValue?.currency || "—"}</td>
                   <td style={td}>{inv.invoiceValue?.amount || "—"}</td>
-                  <td style={td}>{inv.costInsuranceFreight?.amountSgd || "—"}</td>
+                  <td style={td}>
+                    {inv.costInsuranceFreight?.amountSgd || "—"}
+                  </td>
                 </tr>
               ))
             )}
@@ -587,7 +645,8 @@ function buildOutPayload(row, exporter, sNo, permitId, touchUser) {
     TermType: "",
     AdValoremIndicator: "False",
     PreDutyRateIndicator: row.preferentialDutyRateIndicator ? "True" : "False",
-    SupplierImporterRelationship: row.supplierImporterRelationship || "--Select--",
+    SupplierImporterRelationship:
+      row.supplierImporterRelationship || "--Select--",
     SupplierCode: "-",
     ImportPartyCode: exporterCode,
     ExportPartyCode: exporterCode,
@@ -643,11 +702,15 @@ export default function OutInvoice({ data, onEdit, permitId, touchUser }) {
 
   const handleAddInvoice = async () => {
     if (!permitId) {
-      alert('Click "New" first to generate a Permit ID before adding an invoice.');
+      alert(
+        'Click "New" first to generate a Permit ID before adding an invoice.',
+      );
       return;
     }
     if (!touchUser) {
-      alert("This email's mailbox username could not be resolved — cannot save this invoice.");
+      alert(
+        "This email's mailbox username could not be resolved — cannot save this invoice.",
+      );
       return;
     }
     if (!data.Exporter?.Code) {
@@ -669,10 +732,20 @@ export default function OutInvoice({ data, onEdit, permitId, touchUser }) {
       alert("Invoice Currency is required!");
       return;
     }
+    if (!Number(current.invoiceValue.exRate)) {
+      alert("Ex.Rate is missing. Please re-select the currency.");
+      return;
+    }
 
     const sNo = editingSNo ?? nextSNo;
     const rowToSave = { ...current, sNo };
-    const payload = buildOutPayload(rowToSave, data.Exporter, sNo, permitId, touchUser);
+    const payload = buildOutPayload(
+      rowToSave,
+      data.Exporter,
+      sNo,
+      permitId,
+      touchUser,
+    );
 
     setSavingInvoice(true);
     try {
@@ -716,7 +789,10 @@ export default function OutInvoice({ data, onEdit, permitId, touchUser }) {
     } catch (err) {
       console.error("Delete failed", err);
       if (!commonDeleted) {
-        alert(err.response?.data?.error || "Failed to delete invoice, check console for details");
+        alert(
+          err.response?.data?.error ||
+            "Failed to delete invoice, check console for details",
+        );
         setDeleting(false);
         return;
       }
@@ -740,9 +816,19 @@ export default function OutInvoice({ data, onEdit, permitId, touchUser }) {
   return (
     <div>
       <OutPartiesBlock data={data} />
-      <OutDetailsBlock data={data} onEdit={onEdit} serialNumber={displaySerialNumber} />
+      <OutDetailsBlock
+        data={data}
+        onEdit={onEdit}
+        serialNumber={displaySerialNumber}
+      />
 
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 18 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "flex-end",
+          marginBottom: 18,
+        }}
+      >
         <button
           type="button"
           onClick={handleAddInvoice}
@@ -759,7 +845,11 @@ export default function OutInvoice({ data, onEdit, permitId, touchUser }) {
             opacity: savingInvoice ? 0.6 : 1,
           }}
         >
-          {savingInvoice ? "Saving…" : editingSNo ? "Update Invoice" : "+ Add Invoice"}
+          {savingInvoice
+            ? "Saving…"
+            : editingSNo
+              ? "Update Invoice"
+              : "+ Add Invoice"}
         </button>
       </div>
 

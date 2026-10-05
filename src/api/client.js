@@ -20,8 +20,11 @@ export async function fetchAttachments(id) {
   return res.data;
 }
 
+
 export async function notifyN8n(id) {
-  const res = await api.post(`/email/${id}/notify-n8n`);
+  const res = await api.post(`/email/${id}/notify-n8n`, null, {
+    timeout: 330000, 
+  });
   return res.data;
 }
 
@@ -29,7 +32,6 @@ export async function dismissEmail(id) {
   const res = await api.post(`/email/${id}/dismiss`);
   return res.data;
 }
-
 
 export async function completeEmail(id) {
   const res = await api.post(`/email/${id}/complete`);
