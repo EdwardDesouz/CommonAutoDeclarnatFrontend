@@ -2676,7 +2676,7 @@ const buildAll = (raw) => {
                   onGoToPartyTab={() => setActiveTab("party")}
                 />
               )}
-              <details style={{ marginTop: 16 }}>
+              {/* <details style={{ marginTop: 16 }}>
                 <summary style={{ cursor: "pointer", color: "var(--muted)" }}>
                   Raw response
                 </summary>
@@ -2697,7 +2697,7 @@ const buildAll = (raw) => {
                     2,
                   )}
                 </pre>
-              </details>
+              </details> */}
             </>
           )}
         </div>
