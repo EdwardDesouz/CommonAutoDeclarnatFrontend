@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { FaSearch, FaTrash } from "react-icons/fa";
 import API from "../../api/api";
 
@@ -83,7 +83,7 @@ function makeCachedListHook(endpoint) {
   };
 }
 
-const useHsCodeSuggestions = makeCachedListHook("/getCommonHsCodeTableInfo/");
+// const useHsCodeSuggestions = makeCachedListHook("/getCommonHsCodeTableInfo/");
 const useTotalOuterPackOptions = makeCachedListHook(
   "/getTotalOuterPackFromCommonMaster/",
 );
@@ -1027,28 +1027,31 @@ function ItemNumberBadge({ number, active, onClick, controlled, pending }) {
 }
 
 function HsCodeInput({ value, onChangeText, onSelect, onBlurResolve }) {
-  const suggestions = useHsCodeSuggestions();
   const [showDropdown, setShowDropdown] = useState(false);
   const [filtered, setFiltered] = useState([]);
   const [highlighted, setHighlighted] = useState(0);
+  const timer = useRef(null);
+  const reqId = useRef(0);
 
   const runFilter = (val) => {
+    clearTimeout(timer.current);
     if (!val) {
       setShowDropdown(false);
       setFiltered([]);
       return;
     }
-    const matches = suggestions.filter(
-      (i) =>
-        i.HSCode?.toLowerCase().startsWith(val.toLowerCase()) ||
-        i.Description?.toLowerCase().includes(val.toLowerCase()),
-    );
-    const exact = matches.filter(
-      (i) => i.HSCode?.toLowerCase() === val.toLowerCase(),
-    );
-    const finalList = exact.length > 0 ? exact : matches.slice(0, 100);
-    setFiltered(finalList);
-    setShowDropdown(finalList.length > 0);
+    timer.current = setTimeout(async () => {
+      const id = ++reqId.current;
+      try {
+        const res = await API.get("/searchHsCode/", { params: { q: val } });
+        if (id !== reqId.current) return; // ignore outdated responses
+        const list = res.data || [];
+        setFiltered(list);
+        setShowDropdown(list.length > 0);
+      } catch (e) {
+        console.error(e);
+      }
+    }, 250);
   };
 
   const handleChange = (val) => {
@@ -1058,6 +1061,8 @@ function HsCodeInput({ value, onChangeText, onSelect, onBlurResolve }) {
   };
 
   const handleSelect = (item) => {
+    clearTimeout(timer.current);
+    reqId.current++;
     onSelect(item);
     setShowDropdown(false);
   };
@@ -1077,17 +1082,17 @@ function HsCodeInput({ value, onChangeText, onSelect, onBlurResolve }) {
   };
 
   const handleBlur = () => {
-    setTimeout(() => {
-      if (!value) {
-        onBlurResolve(null);
-        setShowDropdown(false);
-        return;
-      }
-      const match = suggestions.find(
-        (i) => String(i.HSCode || "").toLowerCase() === value.toLowerCase(),
-      );
-      onBlurResolve(match || null);
+    setTimeout(async () => {
       setShowDropdown(false);
+      if (!value) return onBlurResolve(null);
+      try {
+        const res = await API.get("/searchHsCode/", {
+          params: { exact: value },
+        });
+        onBlurResolve((res.data || [])[0] || null);
+      } catch {
+        onBlurResolve(null);
+      }
     }, 150);
   };
 
@@ -3071,7 +3076,26 @@ export default function OutItem({ data, onEdit, permitId, user }) {
   const outHawbList =
     MODULE.hasOutHawb && outwardOn ? parseHawbList(getOutHawbString(data)) : [];
 
-  const hsCodeSuggestions = useHsCodeSuggestions();
+  const [hsCodeSuggestions, setHsCodeSuggestions] = useState([]);
+
+  const savedCodesKey = [
+    ...new Set(
+      rawItems
+        .filter(hasSavedItemNo)
+        .map((i) => i.HSCode)
+        .filter(Boolean),
+    ),
+  ].join(",");
+
+  useEffect(() => {
+    if (!savedCodesKey) {
+      setHsCodeSuggestions([]);
+      return;
+    }
+    API.get("/searchHsCode/", { params: { codes: savedCodesKey } })
+      .then((r) => setHsCodeSuggestions(r.data || []))
+      .catch((e) => console.error(e));
+  }, [savedCodesKey]);
 
   const savedRawItems = rawItems.filter(hasSavedItemNo);
   const unsavedRawItems = rawItems.filter((i) => !hasSavedItemNo(i));
@@ -3118,7 +3142,19 @@ export default function OutItem({ data, onEdit, permitId, user }) {
     const row = savedRawItems.find((i) => i.ItemNo === itemNo);
     if (!row) return;
 
-    let draft = buildEditDraftFromSavedRow(row, hsCodeSuggestions);
+    let hsRows = hsCodeSuggestions;
+    if (!hsRows.some((h) => h.HSCode === row.HSCode) && row.HSCode) {
+      try {
+        const r = await API.get("/searchHsCode/", {
+          params: { exact: row.HSCode },
+        });
+        hsRows = r.data || [];
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    let draft = buildEditDraftFromSavedRow(row, hsRows);
     const matchedInvoice = invoiceNumbers.find(
       (inv) => inv.InvoiceNo === draft.InvoiceNo,
     );
