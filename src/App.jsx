@@ -27,6 +27,8 @@ export default function App() {
   const [moduleType, setModuleType] = useState(null);
   const [busy, setBusy] = useState(false);
   const [syncedAt, setSyncedAt] = useState(new Date());
+  const [activeCustomer, setActiveCustomer] = useState(null); // NEW
+  const [customerLogin, setCustomerLogin] = useState(null); // NEW
   const activeRequest = useRef(null);
 
   // Memoized so the panel's form state is not reset on every render
@@ -61,6 +63,8 @@ export default function App() {
     setAttachments([]);
     setRawDeclaration(null);
     setModuleType(null);
+    setActiveCustomer(null); // NEW
+    setCustomerLogin(null); // NEW
     setBusy(false);
   };
 
@@ -69,6 +73,8 @@ export default function App() {
     setAttachments([]);
     setRawDeclaration(null);
     setModuleType(null);
+    setActiveCustomer(null); // NEW
+    setCustomerLogin(null); // NEW
     setBusy(true);
 
     let mod = email.module_type || null;
@@ -89,6 +95,13 @@ export default function App() {
         setSelectedEmail(email);
         setBusy(false);
       }
+      return;
+    }
+
+    // NEW: OPERATION mail-ku n8n ippo call panna vendaam.
+    // Customer click pannina piragu dhaan extraction.
+    if (email.mailboxId === "OPERATION") {
+      if (activeRequest.current === email.id) setBusy(false);
       return;
     }
 
@@ -117,6 +130,23 @@ export default function App() {
       if (activeRequest.current === email.id) setBusy(false);
     }
   };
+
+  // NEW: customer click handler
+const handleCustomerSelect = ({ customer, login, email }) => {
+  activeRequest.current = email.id;
+  setActiveCustomer(customer);
+  setCustomerLogin(login);
+  setSelectedEmail((cur) => ({
+    ...(cur || email),
+    touch_username: login.touchUsername, // ALLIANCE02 (panel idhai dhaan padikkum)
+    touchUsername: login.touchUsername,
+    mailboxUsername: login.touchUsername,
+    accountId: login.accountId, // KAIZEN
+  }));
+  setModuleType("out");
+  setRawDeclaration(null);
+  setBusy(false);
+};
 
   const removeFromList = (id) =>
     setAccounts((prev) =>
@@ -177,12 +207,15 @@ export default function App() {
           accounts={accounts}
           activeId={selectedEmail?.id}
           onSelect={handleSelect}
+          onCustomerSelect={handleCustomerSelect}
+          activeCustomer={activeCustomer}
           onDismiss={handleDismiss}
           loading={loading}
         />
         <PdfViewer email={selectedEmail} attachments={attachments} />
         <DeclarationPanel
           moduleType={moduleType}
+          login={customerLogin}
           email={selectedEmail}
           declaration={declaration}
           busy={busy}

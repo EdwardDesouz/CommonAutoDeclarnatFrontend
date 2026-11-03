@@ -109,3 +109,47 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
+.customer-box {
+  padding: 10px 12px;
+  background: #fff;
+  border-bottom: 1px solid #e3e0d8;
+}
+
+.customer-box-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6b6b6b;
+  margin-bottom: 8px;
+}
+
+.customer-list {
+  max-height: 150px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.customer-item {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #f4f2ec;
+  border: 1px solid #d8d4c8;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.customer-item:hover {
+  background: #e9e5d8;
+}
+
+.customer-item.active {
+  background: #0f2a3d;
+  border-color: #0f2a3d;
+  color: #fff;
+}

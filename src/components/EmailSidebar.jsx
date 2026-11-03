@@ -1,4 +1,7 @@
 import { useState } from "react";
+import { CUSTOMER_LOGIN_MAP } from "../helpers/operationMail";
+
+const OPERATION_MAILBOX_ID = "OPERATION";
 
 function timeAgo(dateStr) {
   if (!dateStr) return "";
@@ -23,11 +26,14 @@ export default function EmailSidebar({
   accounts = [],
   activeId,
   onSelect,
+  onCustomerSelect,
+  activeCustomer,
   loading,
 }) {
   const [expanded, setExpanded] = useState(null);
 
   const totalCount = accounts.reduce((sum, a) => sum + a.emails.length, 0);
+  const customers = Object.entries(CUSTOMER_LOGIN_MAP);
 
   return (
     <aside className="sidebar">
@@ -74,39 +80,78 @@ export default function EmailSidebar({
                 {acct.emails.length === 0 ? (
                   <div className="account-empty">No unread emails</div>
                 ) : (
-                  sortNewestFirst(acct.emails).map((email) => (
-                    <div
-                      key={email.id}
-                      className={`email-item ${activeId === email.id ? "active" : ""}`}
-                    >
-                      <button
-                        className="email-item-body"
-                        onClick={() =>
-                          onSelect({
-                            ...email,
-                            mailboxId: acct.mailbox_id,
-                            mailboxUsername: acct.username,
-                          })
-                        }
-                      >
-                        <div className="email-subject">
-                          {email.sender || "Unknown sender"}
-                        </div>
-                        <div className="email-meta-row">
-                          <span className="attachment-count">
-                            {email.attachment_count} file
-                            {email.attachment_count === 1 ? "" : "s"}
-                          </span>
-                          <span
-                            className="attachment-count"
-                            style={{ marginLeft: "auto" }}
+                  sortNewestFirst(acct.emails).map((email) => {
+                    const isActive = activeId === email.id;
+                    const showCustomers =
+                      acct.mailbox_id === OPERATION_MAILBOX_ID && isActive;
+
+                    return (
+                      <div key={email.id}>
+                        <div
+                          className={`email-item ${isActive ? "active" : ""}`}
+                        >
+                          <button
+                            className="email-item-body"
+                            onClick={() =>
+                              onSelect({
+                                ...email,
+                                mailboxId: acct.mailbox_id,
+                                mailboxUsername: acct.username,
+                              })
+                            }
                           >
-                            {timeAgo(email.received_date)}
-                          </span>
+                            <div className="email-subject">
+                              {email.sender || "Unknown sender"}
+                            </div>
+                            <div className="email-meta-row">
+                              <span className="attachment-count">
+                                {email.attachment_count} file
+                                {email.attachment_count === 1 ? "" : "s"}
+                              </span>
+                              <span
+                                className="attachment-count"
+                                style={{ marginLeft: "auto" }}
+                              >
+                                {timeAgo(email.received_date)}
+                              </span>
+                            </div>
+                          </button>
                         </div>
-                      </button>
-                    </div>
-                  ))
+
+                        {showCustomers && (
+                          <div className="customer-box">
+                            <div className="customer-box-title">
+                              Select customer
+                            </div>
+                            <div className="customer-list">
+                              {customers.map(([customer, login]) => (
+                                <button
+                                  key={customer}
+                                  className={`customer-item ${
+                                    activeCustomer === customer ? "active" : ""
+                                  }`}
+                                  title={`Login as ${login.touchUsername}`}
+                                  onClick={() =>
+                                    onCustomerSelect?.({
+                                      customer,
+                                      login,
+                                      email: {
+                                        ...email,
+                                        mailboxId: acct.mailbox_id,
+                                        mailboxUsername: acct.username,
+                                      },
+                                    })
+                                  }
+                                >
+                                  {customer}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
                 )}
               </div>
             )}
