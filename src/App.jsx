@@ -11,6 +11,10 @@ import {
   dismissEmail,
   completeEmail,
 } from "./api/client";
+import { mapAllianceMail } from "./mappers/mapAllianceMail";
+import { parseAllianceMail } from "./helpers/parseAllianceMail";
+
+const EXTRACT_CUSTOMERS = ["ALLIANCE MOVERS"];
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -27,8 +31,8 @@ export default function App() {
   const [moduleType, setModuleType] = useState(null);
   const [busy, setBusy] = useState(false);
   const [syncedAt, setSyncedAt] = useState(new Date());
-  const [activeCustomer, setActiveCustomer] = useState(null); // NEW
-  const [customerLogin, setCustomerLogin] = useState(null); // NEW
+  const [activeCustomer, setActiveCustomer] = useState(null);
+  const [customerLogin, setCustomerLogin] = useState(null);
   const activeRequest = useRef(null);
 
   // Memoized so the panel's form state is not reset on every render
@@ -63,8 +67,8 @@ export default function App() {
     setAttachments([]);
     setRawDeclaration(null);
     setModuleType(null);
-    setActiveCustomer(null); // NEW
-    setCustomerLogin(null); // NEW
+    setActiveCustomer(null);
+    setCustomerLogin(null);
     setBusy(false);
   };
 
@@ -73,8 +77,8 @@ export default function App() {
     setAttachments([]);
     setRawDeclaration(null);
     setModuleType(null);
-    setActiveCustomer(null); // NEW
-    setCustomerLogin(null); // NEW
+    setActiveCustomer(null);
+    setCustomerLogin(null);
     setBusy(true);
 
     let mod = email.module_type || null;
@@ -98,9 +102,9 @@ export default function App() {
       return;
     }
 
-    // NEW: OPERATION mail-ku n8n ippo call panna vendaam.
-    // Customer click pannina piragu dhaan extraction.
-    if (email.mailboxId === "OPERATION") {
+    // OPERATION / test_agent mails: no n8n call here.
+    // Extraction happens only after a customer is clicked.
+    if (["OPERATION", "test_agent"].includes(email.mailboxId)) {
       if (activeRequest.current === email.id) setBusy(false);
       return;
     }
@@ -131,22 +135,51 @@ export default function App() {
     }
   };
 
-  // NEW: customer click handler
-const handleCustomerSelect = ({ customer, login, email }) => {
-  activeRequest.current = email.id;
-  setActiveCustomer(customer);
-  setCustomerLogin(login);
-  setSelectedEmail((cur) => ({
-    ...(cur || email),
-    touch_username: login.touchUsername, // ALLIANCE02 (panel idhai dhaan padikkum)
-    touchUsername: login.touchUsername,
-    mailboxUsername: login.touchUsername,
-    accountId: login.accountId, // KAIZEN
-  }));
-  setModuleType("out");
-  setRawDeclaration(null);
-  setBusy(false);
-};
+  const handleCustomerSelect = async ({ customer, login, email }) => {
+    activeRequest.current = email.id;
+    setActiveCustomer(customer);
+    setCustomerLogin(login);
+    setSelectedEmail((cur) => ({
+      ...(cur || email),
+      touch_username: login.touchUsername,
+      touchUsername: login.touchUsername,
+      mailboxUsername: login.touchUsername,
+      accountId: login.accountId,
+      account_id: login.accountId,
+    }));
+    setModuleType("out");
+
+    // Not ALLIANCE MOVERS: login only, no extraction
+    if (!EXTRACT_CUSTOMERS.includes(customer.trim().toUpperCase())) {
+      setRawDeclaration(null);
+      setBusy(false);
+      return;
+    }
+
+    const mailText =
+      selectedEmail?.body_preview ||
+      selectedEmail?.body ||
+      email?.body_preview ||
+      email?.body ||
+      "";
+    console.log("mail text:", mailText);
+
+    // Defaults must apply even if the mail is empty or parsing fails
+    let extracted = {};
+    try {
+      extracted = mailText ? parseAllianceMail(mailText) : {};
+      console.log("extracted:", extracted);
+      if (extracted.conflicts?.length)
+        console.warn("Mail has two different values for:", extracted.conflicts);
+    } catch (err) {
+      console.error("Parse failed:", err.message);
+    }
+
+    const mapped = mapAllianceMail(extracted);
+    console.log("[app] mapped:", mapped);
+    setRawDeclaration(mapped);
+    setBusy(false);
+  };
 
   const removeFromList = (id) =>
     setAccounts((prev) =>

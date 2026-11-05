@@ -1,7 +1,11 @@
 import { useState } from "react";
-import { CUSTOMER_LOGIN_MAP } from "../helpers/operationMail";
+import { CUSTOMER_LOGIN_MAP as OPERATION_CUSTOMERS } from "../helpers/operationMail";
+import { CUSTOMER_LOGIN_MAP as TEST_AGENT_CUSTOMERS } from "../helpers/testAgentMail";
 
-const OPERATION_MAILBOX_ID = "OPERATION";
+const CUSTOMER_MAPS = {
+  OPERATION: OPERATION_CUSTOMERS,
+  test_agent: TEST_AGENT_CUSTOMERS,
+};
 
 function timeAgo(dateStr) {
   if (!dateStr) return "";
@@ -33,7 +37,7 @@ export default function EmailSidebar({
   const [expanded, setExpanded] = useState(null);
 
   const totalCount = accounts.reduce((sum, a) => sum + a.emails.length, 0);
-  const customers = Object.entries(CUSTOMER_LOGIN_MAP);
+
 
   return (
     <aside className="sidebar">
@@ -82,8 +86,8 @@ export default function EmailSidebar({
                 ) : (
                   sortNewestFirst(acct.emails).map((email) => {
                     const isActive = activeId === email.id;
-                    const showCustomers =
-                      acct.mailbox_id === OPERATION_MAILBOX_ID && isActive;
+                    const customerMap = CUSTOMER_MAPS[acct.mailbox_id];
+                    const showCustomers = !!customerMap && isActive;
 
                     return (
                       <div key={email.id}>
@@ -124,12 +128,11 @@ export default function EmailSidebar({
                               Select customer
                             </div>
                             <div className="customer-list">
-                              {customers.map(([customer, login]) => (
+                              {Object.entries(customerMap).map(([customer, login]) => (
                                 <button
                                   key={customer}
-                                  className={`customer-item ${
-                                    activeCustomer === customer ? "active" : ""
-                                  }`}
+                                  className={`customer-item ${activeCustomer === customer ? "active" : ""
+                                    }`}
                                   title={`Login as ${login.touchUsername}`}
                                   onClick={() =>
                                     onCustomerSelect?.({

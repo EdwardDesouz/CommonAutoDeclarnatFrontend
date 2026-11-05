@@ -274,14 +274,14 @@ function LocationSuggestField({
     const matches = !search
       ? options
       : options.filter((item) => {
-          const c = String(item[codeKey] || "").toLowerCase();
-          const n = String(item[nameKey] || "").toLowerCase();
-          const nameMatches =
-            nameMatch === "startsWith"
-              ? n.startsWith(search)
-              : n.includes(search);
-          return c.startsWith(search) || nameMatches;
-        });
+        const c = String(item[codeKey] || "").toLowerCase();
+        const n = String(item[nameKey] || "").toLowerCase();
+        const nameMatches =
+          nameMatch === "startsWith"
+            ? n.startsWith(search)
+            : n.includes(search);
+        return c.startsWith(search) || nameMatches;
+      });
     setFiltered(matches.slice(0, 100));
     setShowDropdown(matches.length > 0);
   };
@@ -892,10 +892,10 @@ function MasterPartyField({ type, data, onEdit, touchUser }) {
     const name1 = (party.Name1 || "").toUpperCase();
     const claimantExtra = cfg.hasClaimantNameFields
       ? {
-          ClaimantName: (party.ClaimantName || "").toUpperCase(),
-          ClaimantName1: (party.ClaimantName1 || "").toUpperCase(),
-          Name2: "",
-        }
+        ClaimantName: (party.ClaimantName || "").toUpperCase(),
+        ClaimantName1: (party.ClaimantName1 || "").toUpperCase(),
+        Name2: "",
+      }
       : {};
     // NOTE: still uses the fixed DEFAULT_TOUCH_USER, not the email's
     // touchUser — open question from earlier (Step E), unresolved. Master
@@ -957,14 +957,14 @@ function MasterPartyField({ type, data, onEdit, touchUser }) {
       if (commonSaved) {
         alert(
           `Warning: Code "${code}" was saved to Common${cfg.label} but FAILED to save to ${cfg.label} (inpayment) table. ` +
-            `Tables are now inconsistent.\n\nError: ${err.response?.data?.error || err.response?.data?.Result || err.message}`,
+          `Tables are now inconsistent.\n\nError: ${err.response?.data?.error || err.response?.data?.Result || err.message}`,
         );
         commonCodes.add(code.toLowerCase());
       } else {
         alert(
           err.response?.data?.error ||
-            err.response?.data?.Result ||
-            `Failed to save ${cfg.label}, check console for details`,
+          err.response?.data?.Result ||
+          `Failed to save ${cfg.label}, check console for details`,
         );
       }
     }
@@ -2125,13 +2125,13 @@ export default function DeclarationPanel({
         ),
       ),
     );
-    
-const buildAll = (raw) => {
-  const rawList = normalizeDeclarations(raw);
-  return rawList.map((r) =>
-    buildData({ ...blankDeclaration(), ...(r || {}) }),
-  );
-};
+
+  const buildAll = (raw) => {
+    const rawList = normalizeDeclarations(raw);
+    return rawList.map((r) =>
+      buildData({ ...blankDeclaration(), ...(r || {}) }),
+    );
+  };
 
   // 3. Then the state that uses them
   const [dataList, setDataList] = useState(() => buildAll(mappedDeclaration));
@@ -2220,13 +2220,13 @@ const buildAll = (raw) => {
   const partyData = data.Importer?.Code
     ? data
     : {
-        ...data,
-        Importer: {
-          ...blankParty(PARTY_TYPES.importer),
-          Code: receiverName || "",
-          Name: receiverName || "",
-        },
-      };
+      ...data,
+      Importer: {
+        ...blankParty(PARTY_TYPES.importer),
+        Code: receiverName || "",
+        Name: receiverName || "",
+      },
+    };
   const resetDeclareMode = () => {
     setDeclareMode(null);
     setDataList((prev) => prev.map((d) => setDeep(d, ["PermitId"], "")));
@@ -2635,6 +2635,7 @@ const buildAll = (raw) => {
                   data={data}
                   onEdit={handleEdit}
                   moduleConfig={moduleConfig}
+                  touchUser={touchUser}
                 />
               )}
               {activeTab === "invoice" && (

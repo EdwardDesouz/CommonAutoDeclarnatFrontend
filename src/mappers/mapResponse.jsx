@@ -33,14 +33,25 @@ function unwrap(raw) {
   return v;
 }
 
+// export function mapResponse(moduleType, raw) {
+//   const fn = MAPPERS[moduleType];
+//   if (!raw || !fn) return raw;
+//   const v = unwrap(raw);
+//   if (Array.isArray(v)) return v.map((x) => fn(unwrap(x)));
+//   return v && typeof v === "object" ? fn(v) : null;
+// }
+
 export function mapResponse(moduleType, raw) {
   const fn = MAPPERS[moduleType];
   if (!raw || !fn) return raw;
   const v = unwrap(raw);
-  if (Array.isArray(v)) return v.map((x) => fn(unwrap(x)));
-  return v && typeof v === "object" ? fn(v) : null;
+  const run = (x) => {
+    const u = unwrap(x);
+    return u && typeof u === "object" && u._mapped ? u : fn(u);
+  };
+  if (Array.isArray(v)) return v.map(run);
+  return v && typeof v === "object" ? run(v) : null;
 }
-
 export function moduleMismatch(moduleType, raw) {
   const v = unwrap(raw);
   const first = Array.isArray(v) ? unwrap(v[0]) : v;

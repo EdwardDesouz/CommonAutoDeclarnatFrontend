@@ -20,10 +20,9 @@ export async function fetchAttachments(id) {
   return res.data;
 }
 
-
 export async function notifyN8n(id) {
   const res = await api.post(`/email/${id}/notify-n8n`, null, {
-    timeout: 330000, 
+    timeout: 330000,
   });
   return res.data;
 }
@@ -36,6 +35,21 @@ export async function dismissEmail(id) {
 export async function completeEmail(id) {
   const res = await api.post(`/email/${id}/complete`);
   return res.data;
+}
+
+
+export async function extractFromMailText(payload) {
+  const url = import.meta.env.VITE_LLM_URL;
+  if (!url) throw new Error("VITE_LLM_URL is not set in the frontend .env");
+
+  const res = await axios.post(
+    url,
+    { ...payload, module: "out" },
+    { timeout: 90000 },
+  );
+
+
+  return res.data?.n8n_response || res.data?.extracted || res.data;
 }
 
 export default api;

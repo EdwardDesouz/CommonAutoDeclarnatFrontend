@@ -23,8 +23,8 @@ const MODULE = {
   messageType: "OUTDEC",
   saveEndpoint: "out/postOutItemWithCasc/",
   controlledKey: "Out", // field on the HS-code master row that marks a controlled item
-  dgAsYesNo: true, // DGIndicator sent as "Yes"/"No"
-  chkUnitAsBoolean: true, // ChkUnitPrice sent as a real boolean
+  dgAsYesNo: false, // DGIndicator sent as "Yes"/"No"
+  chkUnitAsBoolean: false, // ChkUnitPrice sent as a real boolean
   requireBrand: false, // Out does not require Brand
   hasTaxTable: false, // no GST / Excise / Customs / Other tax
   hasOutHawb: true,
@@ -416,41 +416,37 @@ function isTextileCo(data) {
 // Out: tax fields are always 0, plus the Certificate of Origin columns.
 function moduleExtraPayload(item) {
   return {
-    GSTUOM: "",
-    GSTAmount: 0,
-    ExciseDutyRate: 0,
-    ExciseDutyUOM: "",
-    ExciseDutyAmount: 0,
-    CustomsDutyRate: 0,
-    CustomsDutyUOM: "",
-    CustomsDutyAmount: 0,
-    OtherTaxRate: 0,
-    OtherTaxUOM: "",
-    OtherTaxAmount: 0,
+    GSTUOM: null,
+    GSTAmount: null,
+    ExciseDutyRate: null,
+    ExciseDutyUOM: null,
+    ExciseDutyAmount: null,
+    CustomsDutyRate: null,
+    CustomsDutyUOM: null,
+    CustomsDutyAmount: null,
+    OtherTaxRate: null,
+    OtherTaxUOM: null,
+    OtherTaxAmount: null,
 
     CerItemQty: item.CerItemQty || 0,
-    CerItemUOM: item.CerItemUOM || "",
+    CerItemUOM: item.CerItemUOM || "--Select--",
     CIFValOfCer: item.CifCerValue || 0,
     ManufactureCostDate: item.ManuDate || "",
     TexCat: item.TextileCategory || "",
     TexQuotaQty: item.TextileQuotaQty || 0,
-    TexQuotaUOM: item.TextileQuotaUOM || "",
+    TexQuotaUOM: item.TextileQuotaUOM || "--Select--",
     CerInvNo: item.CerInvNo || "",
     CerInvDate: item.CerInvDate || "",
-    OriginOfCer: [
-      item.OriginCriterion1,
-      item.OriginCriterion2,
-      item.OriginCriterion3,
-    ]
-      .map((s) => (s || "").trim())
-      .filter(Boolean)
-      .join(","),
+    OriginOfCer:
+      [item.OriginCriterion1, item.OriginCriterion2, item.OriginCriterion3]
+        .map((s) => (s || "").trim())
+        .filter(Boolean)
+        .join(",") || ",,,",
     HSCodeCer: item.HsCodeCer || "",
     PerContent: item.PercentageOrigin || "",
     CertificateDescription: item.CerDescription || "",
   };
 }
-
 function moduleEditExtras(raw) {
   const parts = String(raw.OriginOfCer || "")
     .split(",")
@@ -1325,13 +1321,35 @@ function ItemFieldsEditor({
       : outHawbList[0] || "";
   // ---------------- HS code ----------------
 
-  const applyHsLogic = (hsRow) => {
-    const patch = computeHsLogicFields(hsRow);
-    if (!patch) return;
-    Object.entries(patch).forEach(([k, v]) => set(k, v));
-  };
+  const applyHsLogic = (hsRow) => {                         // existing
+    const patch = computeHsLogicFields(hsRow);              // existing
+    if (!patch) return;                                     // existing
+    Object.entries(patch).forEach(([k, v]) => set(k, v));   // existing
+  };                                                        // existing
 
-  const handleHsCodeSelect = (hsItem) => {
+  // ===== NEW: start =====
+  const hsAutoRef = useRef("");
+  useEffect(() => {
+    const code = (item.HSCode || "").trim();
+    if (!code) {
+      hsAutoRef.current = "";
+      return;
+    }
+    if (item.HSUOM || hsAutoRef.current === code) return;
+    hsAutoRef.current = code;
+    API.get("/searchHsCode/", { params: { exact: code } })
+      .then((res) => {
+        const row = (res.data || [])[0];
+        if (!row) return;
+        if (!item.Description?.trim()) set("Description", row.Description);
+        applyHsLogic(row);
+      })
+      .catch((e) => console.error(e));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.HSCode, item.HSUOM]);
+  // ===== NEW: end =====
+
+  const handleHsCodeSelect = (hsItem) => {                  // existing
     set("HSCode", hsItem.HSCode);
     if (!item.Description?.trim()) set("Description", hsItem.Description);
     applyHsLogic(hsItem);
@@ -1511,7 +1529,6 @@ function ItemFieldsEditor({
     if (item.ExchangeRate !== sel.TIExRate) set("ExchangeRate", sel.TIExRate);
     if (item.UnitPriceCurrency !== sel.TICurrency)
       set("UnitPriceCurrency", sel.TICurrency);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invoiceNumbers, item.InvoiceNo]);
 
   useEffect(() => {
@@ -1772,7 +1789,7 @@ function ItemFieldsEditor({
         ? "True"
         : "False",
     Contry: item.Country || "",
-    EndUserDescription: "",
+    EndUserDescription: null,
     Brand: item.Brand || "",
     Model: item.Model || "",
     InHAWBOBL: effectiveHawb || "",
@@ -1810,7 +1827,7 @@ function ItemFieldsEditor({
     ImPQty: item.ImPQty || 0,
     ImPUOM: item.ImPUOM || "--Select--",
     PreferentialCode: item.PreferentialCode || "--Select--",
-    GSTRate: item.GSTRate,
+    GSTRate: null,
     GSTUOM: item.GSTUOM || "",
     GSTAmount: item.GSTAmount || 0,
     ExciseDutyRate: item.ExciseDutyRate || 0,
@@ -1835,9 +1852,9 @@ function ItemFieldsEditor({
     VehicleType: item.VehicleType || "--Select--",
     OptionalChrgeUOM: item.OptionalCurrency || "--Select--",
     EngineCapcity: item.EngineCapacity || "",
-    Optioncahrge: item.OptionalCharges || 0,
-    OptionalSumtotal: item.OptionalAmountInput || 0,
-    OptionalSumExchage: item.OptionalRate || 0,
+    Optioncahrge: null,
+    OptionalSumtotal: null,
+    OptionalSumExchage: null,
     EngineCapUOM: item.EngineCapacityUOM || "--Select--",
     orignaldatereg: item.OriginalRegDate || "",
 
@@ -1871,8 +1888,8 @@ function ItemFieldsEditor({
       console.error("Save failed", error);
       setSaveError(
         error.response?.data?.error ||
-          error.response?.data?.Result ||
-          "Failed to save item, check console for details",
+        error.response?.data?.Result ||
+        "Failed to save item, check console for details",
       );
     } finally {
       setIsSaving(false);
@@ -1985,7 +2002,7 @@ function ItemFieldsEditor({
               <EditableInput
                 value={effectiveHawb}
                 disabled
-                onChange={() => {}}
+                onChange={() => { }}
               />
             )}
           </Field>
@@ -2016,7 +2033,7 @@ function ItemFieldsEditor({
                 <EditableInput
                   value={effectiveOutHawb}
                   disabled
-                  onChange={() => {}}
+                  onChange={() => { }}
                 />
               )}
             </Field>
@@ -3275,7 +3292,7 @@ export default function OutItem({ data, onEdit, permitId, user }) {
       } catch (mirrorErr) {
         alert(
           `Warning: Item No ${itemNo} was deleted from CommonItemDtl but FAILED to delete from the module table. ` +
-            `Please contact support or retry.\n\nError: ${mirrorErr.response?.data?.error || mirrorErr.message}`,
+          `Please contact support or retry.\n\nError: ${mirrorErr.response?.data?.error || mirrorErr.message}`,
         );
       }
       onEdit(
@@ -3292,7 +3309,7 @@ export default function OutItem({ data, onEdit, permitId, user }) {
     } catch (error) {
       alert(
         error.response?.data?.error ||
-          "Failed to delete item, check console for details",
+        "Failed to delete item, check console for details",
       );
     } finally {
       setDeletingItemNo(null);

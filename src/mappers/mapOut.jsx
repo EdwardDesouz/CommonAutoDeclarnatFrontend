@@ -11,7 +11,6 @@ export function mapOut(r) {
   return {
     ConsignmentNo: pick(s, "reference_no", "hawb"),
 
-    // Out Cargo tab OutHawb / OutMawb padikkum, Hawb/Mawb Summary ku
     Hawb: hawb,
     OutHawb: hawb,
     Mawb: mawb,

@@ -293,6 +293,15 @@ function useMasterOptions(endpoint) {
   return options;
 }
 
+// function HeaderSelectField({ endpoint, value, onChange, fallback }) {
+//   const fetchedOptions = useMasterOptions(endpoint);
+//   const options =
+//     fetchedOptions.length > 0
+//       ? fetchedOptions.map((o) => o.Name)
+//       : fallback
+//         ? [fallback]
+//         : [];
+
 function HeaderSelectField({ endpoint, value, onChange, fallback }) {
   const fetchedOptions = useMasterOptions(endpoint);
   const options =
@@ -301,6 +310,13 @@ function HeaderSelectField({ endpoint, value, onChange, fallback }) {
       : fallback
         ? [fallback]
         : [];
+
+
+  useEffect(() => {
+    if (fetchedOptions.length && value && !options.includes(value)) {
+      console.warn("Header value master-la illa:", endpoint, JSON.stringify(value));
+    }
+  }, [fetchedOptions, value, endpoint]);
 
   return (
     <select

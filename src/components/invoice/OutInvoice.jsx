@@ -13,7 +13,7 @@ const SAVE_ENDPOINT = "out/postOutInvoiceTable/";
 const DELETE_COMMON_ENDPOINT = "/deleteInvoiceNo/";
 const DELETE_MODULE_ENDPOINT = "out/deleteOutInvoiceNo/";
 
-const RELATIONSHIP_OPTIONS = ["RELATED", "NOT RELATED"];
+const RELATIONSHIP_OPTIONS = ["Ordinary Importer", "Agency"];
 
 // ---------------------------------------------------------------------------
 // Master data (cached)
@@ -43,6 +43,29 @@ function useCurrencyOptions() {
   return options;
 }
 
+const termTypeCache = { list: null };
+
+function useTermTypeOptions() {
+  const [options, setOptions] = useState(() => termTypeCache.list || []);
+  useEffect(() => {
+    if (termTypeCache.list) {
+      setOptions(termTypeCache.list);
+      return;
+    }
+    let cancelled = false;
+    API.get("/getTermTypeFromCommonMaster/")
+      .then((response) => {
+        termTypeCache.list = response.data || [];
+        if (!cancelled) setOptions(termTypeCache.list);
+      })
+      .catch((error) => console.error("Error fetching term type", error));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return options;
+}
+
 // ---------------------------------------------------------------------------
 // Blank shape
 // ---------------------------------------------------------------------------
@@ -59,6 +82,7 @@ export function blankInvoice() {
   return {
     invoiceDate: "",
     invoiceNumber: "",
+    termType: "",                       // NEW
     supplierImporterRelationship: "",
     preferentialDutyRateIndicator: false,
     invoiceValue: blankValueRow(),
@@ -269,6 +293,7 @@ function OutDetailsBlock({ data, onEdit, serialNumber }) {
 
   const currencyOptions = useCurrencyOptions();
   const currencyNames = currencyOptions.map((c) => c.Currency).filter(Boolean);
+  const termTypeNames = useTermTypeOptions().map((t) => t.Name).filter(Boolean);
 
   const handleCurrencyChange = (name) => {
     const match = currencyOptions.find((c) => c.Currency === name);
@@ -361,6 +386,13 @@ function OutDetailsBlock({ data, onEdit, serialNumber }) {
             compact
             value={invoice.invoiceNumber}
             onChange={(v) => onEdit([...path, "invoiceNumber"], v)}
+          />
+        </InvoiceField>
+        <InvoiceField label="Term Type">
+          <InvoiceSelect
+            value={invoice.termType}
+            onChange={(v) => onEdit([...path, "termType"], v)}
+            options={termTypeNames}
           />
         </InvoiceField>
         <InvoiceField label="Supplier Importer Relationship">
@@ -642,12 +674,12 @@ function buildOutPayload(row, exporter, sNo, permitId, touchUser) {
     SNo: sNo,
     InvoiceNo: (row.invoiceNumber || "").toUpperCase(),
     InvoiceDate: formatDateForApi(row.invoiceDate),
-    TermType: "",
+    TermType: (row.termType || "--Select--"),
     AdValoremIndicator: "False",
     PreDutyRateIndicator: row.preferentialDutyRateIndicator ? "True" : "False",
     SupplierImporterRelationship:
       row.supplierImporterRelationship || "--Select--",
-    SupplierCode: "-",
+    SupplierCode: row.supplier?.code === "-" ? "" : (row.supplier?.code || ""),
     ImportPartyCode: exporterCode,
     ExportPartyCode: exporterCode,
 
@@ -763,8 +795,8 @@ export default function OutInvoice({ data, onEdit, permitId, touchUser }) {
       console.error("Failed to save invoice:", err.response?.data || err);
       alert(
         err.response?.data?.error ||
-          err.response?.data?.Result ||
-          "Failed to save invoice. Please try again.",
+        err.response?.data?.Result ||
+        "Failed to save invoice. Please try again.",
       );
     } finally {
       setSavingInvoice(false);
@@ -791,14 +823,14 @@ export default function OutInvoice({ data, onEdit, permitId, touchUser }) {
       if (!commonDeleted) {
         alert(
           err.response?.data?.error ||
-            "Failed to delete invoice, check console for details",
+          "Failed to delete invoice, check console for details",
         );
         setDeleting(false);
         return;
       }
       alert(
         `Warning: Invoice SNo ${sNo} was deleted from the common table but FAILED to delete from the module table.\n\n` +
-          `Error: ${err.response?.data?.error || err.message}`,
+        `Error: ${err.response?.data?.error || err.message}`,
       );
     }
 

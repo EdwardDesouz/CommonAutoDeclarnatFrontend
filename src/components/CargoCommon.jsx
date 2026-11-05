@@ -5,10 +5,6 @@ import { C, findRowKey } from "./DeclarationPanel";
 import { HEADER_FIELD_SPECS } from "./headerTab";
 import { getModuleKey, getCargoRules, outwardHawbLabel } from "./headerRules";
 
-// TEMP: shows a yellow line at the top of the Cargo tab with what it sees.
-// Set to false once the Outward card shows correctly.
-const SHOW_CARGO_DEBUG = true;
-
 // ===========================================================================
 // CargoCommon.jsx — ONE Cargo tab for Inpayment, InNonPayment and Out.
 //
@@ -409,6 +405,241 @@ function CargoDateField({
 }
 
 // ---------------------------------------------------------------------------
+// CONTAINER INFO
+//
+// Same behaviour as the legacy Cargo pages: the section only shows when the
+// Header tab's Cargo Pack Type is containerised (legacy `showCargoType`).
+// Each row is saved to the common container table AND mirrored to the
+// module's own container table, exactly like the legacy pages did.
+// ---------------------------------------------------------------------------
+
+// mirror endpoints per module (same ones the legacy pages call)
+const CONTAINER_API = {
+  IPTDEC: {
+    save: "inpayment/postInContainerTable/",
+    del: "inpayment/deleteInContainer/",
+  },
+  INPDEC: {
+    save: "innonpayment/postInnonContainerTable/",
+    del: "innonpayment/deleteInnonContainer/",
+  },
+  OUTDEC: {
+    save: "out/postOutContainerTable/",
+    del: "out/deleteOutContainer/",
+  },
+};
+
+const emptyContainer = (id = 1) => ({
+  id,
+  number: "",
+  sizeType: "",
+  weight: "",
+  seal: "",
+  isSaved: false,
+  isChecked: false,
+});
+
+// "1 : Containerised" => true, "2 : Non-Containerised" => false
+// (adjust the regex if your Cargo Pack Type master values differ)
+export function isContainerised(packType) {
+  const v = String(packType || "");
+  return /containeri[sz]ed/i.test(v) && !/non/i.test(v);
+}
+
+const TH_STYLE = {
+  fontSize: 10.5,
+  fontWeight: 700,
+  color: "#2A3D4F",
+  textAlign: "left",
+  padding: "2px 4px",
+};
+
+function CargoContainerSection({
+  containers,
+  onChange,
+  moduleKey,
+  permitId,
+  touchUser,
+}) {
+  const containerTypes = useApiList("/getContainerFromCommonMaster/");
+  const [busy, setBusy] = useState(false);
+  const api = CONTAINER_API[moduleKey];
+
+  // always show at least one empty row
+  const rows = containers.length ? containers : [emptyContainer(1)];
+  const rowNo = (c) => rows.findIndex((r) => r.id === c.id) + 1;
+  const patch = (id, p) =>
+    onChange(rows.map((r) => (r.id === id ? { ...r, ...p } : r)));
+
+  const addRow = () =>
+    onChange([
+      ...rows,
+      emptyContainer(Math.max(...rows.map((r) => Number(r.id) || 0)) + 1),
+    ]);
+
+  const saveRow = async (c) => {
+    const no = rowNo(c);
+    if (
+      !c.number ||
+      !c.sizeType ||
+      c.sizeType === "--Select--" ||
+      !c.weight ||
+      !c.seal
+    ) {
+      alert(`Please fill all details correctly for row ${no}`);
+      return;
+    }
+    const payload = {
+      PermitId: permitId,
+      RowNo: no,
+      ContainerNo: String(c.number).trim(),
+      Size: String(c.sizeType).trim(),
+      Weight: Number(c.weight),
+      SealNo: String(c.seal).trim(),
+      MessageType: moduleKey,
+      TouchUser: String(touchUser || "").toUpperCase(),
+      TouchTime: new Date().toISOString(),
+    };
+    try {
+      setBusy(true);
+      // common container table
+      const res = await API.post("/postContainerTable/", payload);
+      // mirror to the module's own container table
+      if (api) await API.post(api.save, payload);
+      alert(res.data?.Result || "Container saved successfully!");
+      patch(c.id, { isSaved: true, isChecked: false });
+    } catch (err) {
+      console.error("Error saving container:", err.response?.data || err);
+      alert(
+        err.response?.data?.error ||
+        err.response?.data?.Result ||
+        "Error saving container! Check console for details.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteRow = async (c) => {
+    try {
+      setBusy(true);
+      // only rows that were saved exist on the server
+      if (c.isSaved) {
+        const payload = { PermitId: permitId, RowNo: rowNo(c) };
+        await API.post("/deleteContainer/", payload);
+        if (api) await API.post(api.del, payload);
+      }
+      const remaining = rows.filter((r) => r.id !== c.id);
+      onChange(remaining.length ? remaining : [emptyContainer(1)]);
+    } catch (err) {
+      console.error("Error deleting container:", err.response?.data || err);
+      alert(
+        err.response?.data?.error ||
+        "Error deleting container! Check console for details.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const textCell = (c, key) => (
+    <input
+      type="text"
+      value={c[key] ?? ""}
+      disabled={c.isSaved}
+      onChange={(e) => patch(c.id, { [key]: e.target.value.toUpperCase() })}
+      style={inputStyle({ disabled: c.isSaved })}
+    />
+  );
+
+  return (
+    <CargoSectionCard title="CONTAINER INFO">
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th style={TH_STYLE}>#</th>
+              <th style={TH_STYLE}>Container No</th>
+              <th style={TH_STYLE}>Size / Type</th>
+              <th style={TH_STYLE}>Weight (TNE)</th>
+              <th style={TH_STYLE}>Seal No</th>
+              <th style={TH_STYLE} colSpan={3}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((c, i) => (
+              <tr key={c.id}>
+                <td style={{ padding: 2, fontSize: 11 }}>{i + 1}</td>
+                <td style={{ padding: 2 }}>{textCell(c, "number")}</td>
+                <td style={{ padding: 2 }}>
+                  <select
+                    value={c.sizeType ?? ""}
+                    disabled={c.isSaved}
+                    onChange={(e) => patch(c.id, { sizeType: e.target.value })}
+                    style={{
+                      ...inputStyle({ disabled: c.isSaved }),
+                      padding: "3px 4px",
+                    }}
+                  >
+                    <option value="">--Select--</option>
+                    {c.sizeType &&
+                      !containerTypes.some((t) => t.Name === c.sizeType) && (
+                        <option value={c.sizeType}>{c.sizeType}</option>
+                      )}
+                    {containerTypes.map((t) => (
+                      <option key={t.Name} value={t.Name}>
+                        {t.Name}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td style={{ padding: 2 }}>{textCell(c, "weight")}</td>
+                <td style={{ padding: 2 }}>{textCell(c, "seal")}</td>
+                <td style={{ padding: 2 }}>
+                  {c.isSaved ? (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => patch(c.id, { isSaved: false })}
+                    >
+                      Edit
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => saveRow(c)}
+                    >
+                      Save
+                    </button>
+                  )}
+                </td>
+                <td style={{ padding: 2 }}>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => deleteRow(c)}
+                  >
+                    Delete
+                  </button>
+                </td>
+                <td style={{ padding: 2 }}>
+                  {i === rows.length - 1 && (
+                    <button type="button" onClick={addRow}>
+                      +
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </CargoSectionCard>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Location suggestions (Release / Receipt / Storage / Loading / Discharge /
 // Next / Last port). Exported because other tabs may reuse it.
 // ---------------------------------------------------------------------------
@@ -449,14 +680,14 @@ export function LocationSuggestField({
     const matches = !search
       ? options
       : options.filter((item) => {
-          const c = String(item[codeKey] || "").toLowerCase();
-          const n = String(item[nameKey] || "").toLowerCase();
-          const nameMatches =
-            nameMatch === "startsWith"
-              ? n.startsWith(search)
-              : n.includes(search);
-          return c.startsWith(search) || nameMatches;
-        });
+        const c = String(item[codeKey] || "").toLowerCase();
+        const n = String(item[nameKey] || "").toLowerCase();
+        const nameMatches =
+          nameMatch === "startsWith"
+            ? n.startsWith(search)
+            : n.includes(search);
+        return c.startsWith(search) || nameMatches;
+      });
     setFiltered(matches.slice(0, 100));
     setShowDropdown(matches.length > 0);
   };
@@ -1077,12 +1308,15 @@ export function seedTotalGrossWeightDefault(d) {
 //                   tab gets). Needs .messageType (IPTDEC / INPDEC / OUTDEC).
 //   errors        — optional validation flags coming from the panel:
 //                   { hawbMandatory, outHawbMandatory }
+//   touchUser     — login used as TouchUser when saving containers
+//                   (e.g. the customer-click login: email.touchUsername)
 // ---------------------------------------------------------------------------
 export default function CargoTabContent({
   data,
   onEdit,
   moduleConfig,
   errors = {},
+  touchUser,
 }) {
   const S = CARGO_FIELD_SPECS;
   const cfg = getCargoConfig(moduleConfig);
@@ -1249,6 +1483,19 @@ export default function CargoTabContent({
     S.exhibitionEndDate.aliases,
     S.exhibitionEndDate.key,
   );
+
+  // ---- container info ------------------------------------------------------
+  // Same rule as the legacy showCargoType: shown only when the Header tab's
+  // Cargo Pack Type is containerised. (If your Header tab uses a different
+  // key than "CargoPackType", change it here.)
+  const packType = readHeaderField(data, "CargoPackType");
+  const showContainers = isContainerised(packType);
+
+  const containersKey = findRowKey(data, ["containers", "containerlist"]);
+  const containers = Array.isArray(data[containersKey])
+    ? data[containersKey]
+    : [];
+  const containersPath = [containersKey || "Containers"];
 
   // ---- small render helpers ------------------------------------------------
   const scalar = (specKey, extra = {}) => (
@@ -1516,6 +1763,17 @@ export default function CargoTabContent({
           </CargoSectionCard>
         )}
       </div>
+
+      {/* ---------------- CONTAINER INFO (containerised cargo only) ------- */}
+      {showContainers && (
+        <CargoContainerSection
+          containers={containers}
+          onChange={(rows) => onEdit(containersPath, rows)}
+          moduleKey={moduleKey}
+          permitId={permitId}
+          touchUser={touchUser}
+        />
+      )}
     </div>
   );
 }

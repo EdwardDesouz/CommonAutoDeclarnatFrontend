@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { FaSearch, FaPlus } from "react-icons/fa";
+import { FaSearch, FaPlus, FaChevronDown } from "react-icons/fa";
 import API from "../api/api";
 import { C } from "./DeclarationPanel";
 
@@ -31,6 +31,9 @@ export const PARTY_TYPES = {
     label: "Exporter",
     hasAddress: true,
     mandatory: true,
+    customerCruei: {                     
+      ALLIANCEMOVERS: ["99999000000N"],
+    },
     commonEndpoint: "/getCommonExporterTableInfo/",
     saveEndpoint: "/postExporterTable/",
     moduleFetch: {
@@ -523,6 +526,25 @@ export function MasterPartyField({
 
   const set = (field, value) => onEdit([...path, field], value);
 
+
+  const declaringFor = String(data.DeclaringFor || "").toUpperCase();
+  const crueiList =
+    Object.entries(cfg.customerCruei || {}).find(([customer]) =>
+      declaringFor.includes(customer),
+    )?.[1] || [];
+
+  const cycleCruei = (dir = 1) => {
+    if (!crueiList.length) return;
+    const cur = crueiList.indexOf(party.CRUEI);
+    const next =
+      cur === -1
+        ? dir === 1
+          ? 0
+          : crueiList.length - 1
+        : (cur + dir + crueiList.length) % crueiList.length;
+    set("CRUEI", crueiList[next]);
+  };
+
   // Seed the default record (e.g. SATS LTD, LINEHAUL EXPRESS) once options load.
   useEffect(() => {
     if (!cfg.defaultCode || !rows.length || party.Name) return;
@@ -732,20 +754,60 @@ export function MasterPartyField({
           )}
         </div>
 
-        <div>
-          <PartyInput
-            value={party.CRUEI}
-            placeholder="CRUEI"
-            mandatory={mandatory}
-            readOnly={readOnly}
-            onChange={(v) => set("CRUEI", v)}
-          />
+            <div>
+          <div style={{ position: "relative" }}>
+            <PartyInput
+              value={party.CRUEI}
+              placeholder="CRUEI"
+              mandatory={mandatory}
+              readOnly={readOnly}
+              onChange={(v) => set("CRUEI", v)}
+              onKeyDown={(e) => {
+                if (!crueiList.length) return;
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  cycleCruei(1);
+                } else if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  cycleCruei(-1);
+                }
+              }}
+            />
+            {crueiList.length > 0 && !readOnly && (
+              <button
+                type="button"
+                title="Fill default CRUEI"
+                onClick={() => cycleCruei(1)}
+                style={{
+                  position: "absolute",
+                  right: 1,
+                  top: 1,
+                  bottom: 1,
+                  width: 24,
+                  border: "none",
+                  borderLeft: `1px solid ${C.inputBorder}`,
+                  background: C.tabIdleBg,
+                  color: C.bar,
+                  borderRadius: "0 3px 3px 0",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: 0,
+                }}
+              >
+                <FaChevronDown style={{ fontSize: 10 }} />
+              </button>
+            )}
+          </div>
           {errors.CRUEI && (
             <span style={{ color: ERROR_COLOR, fontSize: 11 }}>
               {errors.CRUEI}
             </span>
           )}
         </div>
+
+
       </div>
 
       <div style={rowStyle(2)}>

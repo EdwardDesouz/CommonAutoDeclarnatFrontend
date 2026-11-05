@@ -814,6 +814,7 @@ export function buildOutHeaderPayload(data, ids, touchUser) {
   const { items, totalCIFFOBValue } = computeTotals(data, "out");
 
   const flag = (v) => (v ? "true" : "false");
+  const capFlag = (v) => (v ? "True" : "False");
 
   let permitNumber = data.PermitNumber || ids?.PermitNumber || "";
   if (permitNumber === "None" || permitNumber === "NONE") permitNumber = "";
@@ -835,7 +836,7 @@ export function buildOutHeaderPayload(data, ids, touchUser) {
     BGIndicator: data.BgIndicator || "--Select--",
     SupplyIndicator: flag(data.SupplyIndicator),
     ReferenceDocuments: flag(data.ReferenceDocument),
-    License: data.License || ",,,,",
+    License: (data.License || "").replace(/[,\s]/g, "") ? data.License : "----",
     Recipient: data.Recipient || "--",
 
     ExporterCompanyCode: data.Exporter?.Code || "",
@@ -851,7 +852,7 @@ export function buildOutHeaderPayload(data, ids, touchUser) {
     // Inward
     HBL: data.Hawb || "",
     INHAWB: data.Hawb || "",
-    ArrivalDate: toApiDate(data.ArrivalDate)|| "1900-01-01",
+    ArrivalDate: toApiDate(data.ArrivalDate) || "1900-01-01",
     LoadingPortCode: data.LoadingPort?.Code || "",
     VoyageNumber: data.VoyageNumber || "",
     VesselName: data.VesselName || "",
@@ -861,17 +862,17 @@ export function buildOutHeaderPayload(data, ids, touchUser) {
     FlightNO: data.FlightNumber || "",
     AircraftRegNo: data.AircraftRegNo || "",
     MasterAirwayBill: data.Mawb || "",
-    ArrivalTime:	data.ArrivalTime || "",
-    DepartureTime:	data.DepartureTime || "",
-    RepLocName:	data.ReceiptLocation?.Name || "",
-    CertificateNumber:	data.CertificateNumber || "",
-    Defrentprinting:	data.Defrentprinting || "",
-    CondColor:	data.CondColor || "",
-    TransmitId:	data.TransmitId || "",
+    ArrivalTime: data.ArrivalTime || "",
+    DepartureTime: data.DepartureTime || "",
+    RepLocName: data.ReceiptLocation?.Name || "",
+    CertificateNumber: data.CertificateNumber || "",
+   Defrentprinting: capFlag(data.Defrentprinting),
+    CondColor: data.CondColor || "",
+    TransmitId: data.TransmitId || "",
 
     // Outward
     outHAWB: data.OutHawb || "",
-    DepartureDate: toApiDate(data.DepartureDate)|| "1900-01-01",
+    DepartureDate: toApiDate(data.DepartureDate) || "1900-01-01",
     DischargePort: data.DischargePort?.Code || "",
     FinalDestinationCountry: data.FinalDestinationCountry || "",
     OutVoyageNumber: data.OutVoyageNumber || "",
@@ -879,7 +880,7 @@ export function buildOutHeaderPayload(data, ids, touchUser) {
     OutOceanBillofLadingNo: data.OutObl || "",
     VesselType: data.VesselType || "",
     VesselNetRegTon: data.VesselNetRegisterTonnage || "",
-    VesselNationality: data.VesselNationality || "",
+ VesselNationality: data.VesselNationality || "--Select--",
     TowingVesselID: data.TowingVesselId || "",
     TowingVesselName: data.TowingVesselName || "",
     NextPort: data.NextPortCode || "",
@@ -895,7 +896,7 @@ export function buildOutHeaderPayload(data, ids, touchUser) {
     COType: data.CoType || "--Select--",
     Entryyear: data.EntryYear || "",
     GSPDonorCountry: data.GSPDonorCountry || "--Select--",
-    PerCommon:data.PerCommon || "",
+    PerCommon: data.PerCommon || "",
     Inwardcarriercode: data.InwardCarrierCode || "",
     CerDetailtype1: data.CertificateType1 || "--Select--",
     CerDetailCopies1: data.CertificateCopy1 || "",
@@ -936,7 +937,7 @@ export function buildOutHeaderPayload(data, ids, touchUser) {
     TouchTime: new Date().toISOString(),
     PermitNumber: permitNumber,
     prmtStatus: data.prmtStatus || data.PrmtStatus || ids?.prmtStatus || "NEW",
-    Cnb: flag(data.cpc?.CNB?.on),
+  Cnb: capFlag(data.cpc?.CNB?.on),
     DeclareIndicator: flag(data.DeclarationChecked),
     DeclarningFor: data.DeclaringFor || data.DeclFor || "--Select--",
     MRDate: toApiDate(data.MRDate),
@@ -1040,7 +1041,7 @@ export async function savePermitInpayment({
   } catch (mirrorErr) {
     throw new Error(
       `Permit was saved to the common header table but FAILED at "${step}" (${mirrorErr.config?.url || ""}) for the ${cfg.label} table. ` +
-        `Please contact support or retry.\n\n${mirrorErr.response?.data?.error || mirrorErr.message}`,
+      `Please contact support or retry.\n\n${mirrorErr.response?.data?.error || mirrorErr.message}`,
     );
   }
   return { permitId };
@@ -1094,7 +1095,7 @@ export async function savePermitInnonpayment({
   } catch (mirrorErr) {
     throw new Error(
       `Permit was saved to the common header table but FAILED at "${step}" (${mirrorErr.config?.url || ""}) for the ${cfg.label} table. ` +
-        `Please contact support or retry.\n\n${mirrorErr.response?.data?.error || mirrorErr.message}`,
+      `Please contact support or retry.\n\n${mirrorErr.response?.data?.error || mirrorErr.message}`,
     );
   }
   return { permitId };
@@ -1103,6 +1104,25 @@ export async function savePermitInnonpayment({
 // ── OUT ─────────────────────────────────────────────────────────────────────
 // Set to false if OutHeaderTbl uses ResLoaName instead of ReleaseLocName.
 const OUT_MIRROR_USES_RELEASE_LOC_NAME = true;
+
+async function withCountryLabel(data) {
+  const raw = (data.FinalDestinationCountry || "").trim();
+  if (!raw || raw.includes(":")) return data;
+  try {
+    const res = await API.get("/getCommonCountryTableInfo/");
+    const hit = (res.data || []).find(
+      (c) => String(c.CountryCode).toLowerCase() === raw.toLowerCase(),
+    );
+    if (hit)
+      return {
+        ...data,
+        FinalDestinationCountry: `${hit.CountryCode} : ${hit.Description}`,
+      };
+  } catch (e) {
+    console.error("Country lookup failed", e);
+  }
+  return data;
+}
 
 export async function savePermitOut({ data, ids, touchUser, containers = [] }) {
   const cfg = getModuleConfig("out");
@@ -1119,7 +1139,11 @@ export async function savePermitOut({ data, ids, touchUser, containers = [] }) {
   );
   await API.post(commonCpcEndpoint(permitId), cpcData);
 
-  const headerPayload = buildOutHeaderPayload(data, ids, touchUser);
+  const headerPayload = buildOutHeaderPayload(
+    await withCountryLabel(data),
+    ids,
+    touchUser,
+  );
   const commonResponse = await API.post(
     cfg.commonHeaderEndpoint,
     headerPayload,
@@ -1143,7 +1167,7 @@ export async function savePermitOut({ data, ids, touchUser, containers = [] }) {
   } catch (mirrorErr) {
     throw new Error(
       `Permit was saved to the common header table but FAILED at "${step}" (${mirrorErr.config?.url || ""}) for the ${cfg.label} table. ` +
-        `Please contact support or retry.\n\n${mirrorErr.response?.data?.error || mirrorErr.message}`,
+      `Please contact support or retry.\n\n${mirrorErr.response?.data?.error || mirrorErr.message}`,
     );
   }
   return { permitId };
