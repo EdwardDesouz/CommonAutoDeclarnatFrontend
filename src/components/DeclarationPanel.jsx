@@ -20,6 +20,7 @@ import { getModuleConfig } from "./moduleConfig";
 import { SummaryTabContent } from "./SummaryCommon";
 import { C } from "./Theme";
 import { mapResponse } from "../mappers/mapResponse";
+import TabNavFooter from "./TabNavFooter";
 
 export { C };
 
@@ -2352,6 +2353,11 @@ export default function DeclarationPanel({
     );
   };
 
+  const goToTab = (id) => {
+    setActiveTab(id);
+    document.querySelector(".decl-scroll")?.scrollTo({ top: 0 });
+  };
+
   const currentIdentity = pageIdentities[pageIndex];
 
   // ── Saving now goes through the shared SummaryCommon.jsx implementation,
@@ -2677,6 +2683,11 @@ export default function DeclarationPanel({
                   onGoToPartyTab={() => setActiveTab("party")}
                 />
               )}
+              <TabNavFooter
+                tabs={TABS.map((t) => t.id)}
+                activeTab={activeTab}
+                onChange={goToTab}
+              />
               {/* <details style={{ marginTop: 16 }}>
                 <summary style={{ cursor: "pointer", color: "var(--muted)" }}>
                   Raw response
