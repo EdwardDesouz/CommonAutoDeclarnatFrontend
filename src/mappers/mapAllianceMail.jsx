@@ -2,7 +2,7 @@ const ALLIANCE_DEFAULTS = {
   OutwardTransportMode: "1 : Sea",
   DeclarationType: "DRT : DIRECT (INCLUDING STORAGE IN FTZ)",
   DeclaringFor: "ALLIANCEMOVERS-EXP",
-  CARGO_CONTAINERISED: "9 : Containerized",
+  CARGO_CONTAINERISED: "9: Containerized",
   CARGO_NON_CONTAINERISED: "5 : Other non-Containerized",
   VESSEL_TYPE: "CV : CARGO VESSEL",
   TERM_TYPE: "",
@@ -10,6 +10,8 @@ const ALLIANCE_DEFAULTS = {
 };
 
 const WEIGHT_UNITS = { KG: "KGM", KGS: "KGM", KGM: "KGM", MT: "TNE", TNE: "TNE" };
+
+const PACK_UNITS = { CASE: "CAS", CASES: "CAS" };
 
 const compact = (o) =>
   Object.fromEntries(Object.entries(o).filter(([, v]) => v !== "" && v != null));
@@ -64,7 +66,9 @@ export function mapAllianceMail(x = {}) {
       TotalGrossWeight: x.total_gross_weight,
       TotalGrossWeightUnit: WEIGHT_UNITS[u] || u,
       TotalOuterPack: x.total_outer_pack,
-      TotalOuterPackUnit: x.total_outer_pack_unit,
+      TotalOuterPackUnit:
+        PACK_UNITS[String(x.total_outer_pack_unit || "").toUpperCase()] ||
+        x.total_outer_pack_unit,
 
       DischargePort: loc(x.port_of_discharge),
       ReceiptLocation: loc(x.place_of_receipt, true),

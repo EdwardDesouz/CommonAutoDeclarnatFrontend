@@ -465,6 +465,15 @@ function CargoContainerSection({
   const [busy, setBusy] = useState(false);
   const api = CONTAINER_API[moduleKey];
 
+  const canonicalSize = (val) => {
+    const v = String(val || "").trim();
+    if (!v) return "";
+    const match = containerTypes.find(
+      (t) => String(t.Name).toLowerCase() === v.toLowerCase(),
+    );
+    return match ? match.Name : v;
+  };
+
   // always show at least one empty row
   const rows = containers.length ? containers : [emptyContainer(1)];
   const rowNo = (c) => rows.findIndex((r) => r.id === c.id) + 1;
@@ -493,7 +502,7 @@ function CargoContainerSection({
       PermitId: permitId,
       RowNo: no,
       ContainerNo: String(c.number).trim(),
-      Size: String(c.sizeType).trim(),
+      Size: canonicalSize(c.sizeType),
       Weight: Number(c.weight),
       SealNo: String(c.seal).trim(),
       MessageType: moduleKey,
@@ -503,6 +512,7 @@ function CargoContainerSection({
     try {
       setBusy(true);
       // common container table
+      console.log("Size being sent:", payload.Size);
       const res = await API.post("/postContainerTable/", payload);
       // mirror to the module's own container table
       if (api) await API.post(api.save, payload);
@@ -573,19 +583,16 @@ function CargoContainerSection({
                 <td style={{ padding: 2 }}>{textCell(c, "number")}</td>
                 <td style={{ padding: 2 }}>
                   <select
-                    value={c.sizeType ?? ""}
+                    value={canonicalSize(c.sizeType)}
                     disabled={c.isSaved}
                     onChange={(e) => patch(c.id, { sizeType: e.target.value })}
-                    style={{
-                      ...inputStyle({ disabled: c.isSaved }),
-                      padding: "3px 4px",
-                    }}
+                    style={{ ...inputStyle({ disabled: c.isSaved }), padding: "3px 4px" }}
                   >
                     <option value="">--Select--</option>
                     {c.sizeType &&
-                      !containerTypes.some((t) => t.Name === c.sizeType) && (
-                        <option value={c.sizeType}>{c.sizeType}</option>
-                      )}
+                      !containerTypes.some(
+                        (t) => String(t.Name).toLowerCase() === String(c.sizeType).toLowerCase(),
+                      ) && <option value={c.sizeType}>{c.sizeType}</option>}
                     {containerTypes.map((t) => (
                       <option key={t.Name} value={t.Name}>
                         {t.Name}
@@ -638,6 +645,9 @@ function CargoContainerSection({
     </CargoSectionCard>
   );
 }
+
+
+
 
 // ---------------------------------------------------------------------------
 // Location suggestions (Release / Receipt / Storage / Loading / Discharge /

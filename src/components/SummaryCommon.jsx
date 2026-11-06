@@ -2158,7 +2158,7 @@ export function SummaryTabContent({
       </div>
 
       <div style={{ display: "flex", justifyContent: "center", gap: 12 }}>
-        <button
+        {/* <button
           className="decl-button decl-button-amber"
           onClick={() => {
             setDraftReason("");
@@ -2167,7 +2167,7 @@ export function SummaryTabContent({
           }}
         >
           SAVE AS DRAFT
-        </button>
+        </button> */}
         <button
           className="decl-button decl-button-verdigris"
           disabled={isSavingPermit}

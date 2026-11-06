@@ -22,13 +22,13 @@ const MODULE = {
   name: "out",
   messageType: "OUTDEC",
   saveEndpoint: "out/postOutItemWithCasc/",
-  controlledKey: "Out", // field on the HS-code master row that marks a controlled item
-  dgAsYesNo: false, // DGIndicator sent as "Yes"/"No"
-  chkUnitAsBoolean: false, // ChkUnitPrice sent as a real boolean
-  requireBrand: false, // Out does not require Brand
-  hasTaxTable: false, // no GST / Excise / Customs / Other tax
+  controlledKey: "Out", 
+  dgAsYesNo: false,
+  chkUnitAsBoolean: false, 
+  requireBrand: false, 
+  hasTaxTable: false, 
   hasOutHawb: true,
-  hasEndUserDescription: true, // End User Description per CASC box
+  hasEndUserDescription: true, 
 };
 // <<< MODULE-SPECIFIC: config
 

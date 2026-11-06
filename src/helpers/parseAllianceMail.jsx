@@ -25,6 +25,44 @@ const FIELDS = [
   ["seal", /^seal\b/],
 ];
 
+// strip quote markers (> ) from replied/forwarded mails
+const cleanLine = (raw) => raw.replace(/^[>\s]+/, "").trim();
+const normLabel = (s) => s.trim().toLowerCase().replace(/\s+/g, " ");
+
+// segment-la irukkura known fields count
+function fieldScore(lines) {
+  let n = 0;
+  for (const line of lines) {
+    const i = line.indexOf(":");
+    if (i < 1) continue;
+    if (FIELDS.some(([, re]) => re.test(normLabel(line.slice(0, i))))) n++;
+  }
+  return n;
+}
+
+// Thread-la irundhu data irukkura MUDHAL (latest) message mattum
+export function getNewestMessage(body) {
+  const lines = toText(body).split("\n").map(cleanLine);
+  const segs = [[]];
+
+  for (const line of lines) {
+    const isBoundary =
+      /^from:\s*\S/i.test(line) ||
+      /^-{2,}\s*original message\s*-{2,}/i.test(line) ||
+      /^_{5,}$/.test(line) ||
+      /^on .{5,150} wrote:$/i.test(line);
+    if (isBoundary) segs.push([]);
+    segs[segs.length - 1].push(line);
+  }
+
+  const scored = segs.map((s) => ({ lines: s, score: fieldScore(s) }));
+  const best =
+    scored.find((s) => s.score >= 3) ||
+    scored.reduce((a, b) => (b.score > a.score ? b : a), scored[0]);
+
+  if (!best || best.score === 0) return lines.join("\n"); // fallback: muzhu text
+  return best.lines.join("\n");
+}
 
 function splitQty(str = "") {
   const c = str.trim().match(/^(\d+)\s*x\s*(\d{2})\s*([A-Za-z']*)/i);
@@ -56,9 +94,9 @@ export function parseAllianceMail(body) {
     out[key] = value;
   };
 
-  for (const raw of toText(body).split("\n")) {
-    // strip quote markers (> ) from replied/forwarded mails
-    const line = raw.replace(/^[>\s]+/, "").trim();
+  // latest message mattum parse pannum
+  for (const raw of getNewestMessage(body).split("\n")) {
+    const line = cleanLine(raw);
     if (!line) continue;
 
     const i = line.indexOf(":");
@@ -67,7 +105,7 @@ export function parseAllianceMail(body) {
       continue;
     }
 
-    const label = line.slice(0, i).trim().toLowerCase().replace(/\s+/g, " ");
+    const label = normLabel(line.slice(0, i));
     const value = line.slice(i + 1).trim();
     if (!value) continue;
 
