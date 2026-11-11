@@ -108,8 +108,7 @@ code {
   line-height: 135%;
   padding: 4px 8px;
   background: var(--code-bg);
-}
-.customer-box {
+}.customer-box {
   padding: 10px 12px;
   background: #fff;
   border-bottom: 1px solid #e3e0d8;
@@ -139,6 +138,7 @@ code {
   font-size: 13px;
   font-weight: 600;
   background: #f4f2ec;
+  color: #0f2a3d;
   border: 1px solid #d8d4c8;
   border-radius: 6px;
   cursor: pointer;
@@ -152,4 +152,9 @@ code {
   background: #0f2a3d;
   border-color: #0f2a3d;
   color: #fff;
+  font-weight: 700;
+}
+
+.customer-item.active::before {
+  content: "✔ ";
 }

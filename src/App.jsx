@@ -13,8 +13,49 @@ import {
 } from "./api/client";
 import { mapAllianceMail } from "./mappers/mapAllianceMail";
 import { parseAllianceMail } from "./helpers/parseAllianceMail";
+// NNR
+import { mapNnrGeEngineMail } from "./mappers/mapNNrGeEngineMail";
+import { mapNnrGeMaterialsMail } from "./mappers/mapNnrGeMaterials";
+import { mapNnrZebraTechMail } from "./mappers/mapNnrZebraTech";
+import { mapNnrYamahaMail } from "./mappers/mapNnrYamaha";
 
-const EXTRACT_CUSTOMERS = ["ALLIANCE MOVERS"];
+// Placeholder until a real GE mail parser exists: returns no fields, so only
+// the defaults from the mapper apply.
+const parseGeMail = () => ({});
+
+const CUSTOMER_FLOWS = {
+  "ALLIANCE MOVERS": { parse: parseAllianceMail, map: mapAllianceMail },
+  "GE ENGINE": { parse: parseGeMail, map: mapNnrGeEngineMail, n8n: true },
+  "GE MATERIALS": { parse: parseGeMail, map: mapNnrGeMaterialsMail, n8n: true },
+  "ZEBRA TECH": { parse: parseGeMail, map: mapNnrZebraTechMail, n8n: true },
+  "YAMAHA": { parse: parseGeMail, map: mapNnrYamahaMail, n8n: true },
+};
+
+const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
+
+// Defaults win wherever they have a value. Fields the defaults leave blank
+// (or don't mention) are filled from the n8n response.
+function mergeDefaults(n8nMapped, defaults) {
+  const merge = (base, over) => {
+    if (!isObj(base) || !isObj(over)) return over ?? base;
+    const out = { ...base };
+    for (const [k, v] of Object.entries(over)) {
+      if (isObj(v) && isObj(base[k])) {
+        out[k] = merge(base[k], v);
+      } else if (v !== "" && v != null) {
+        out[k] = v;
+      }
+    }
+    return out;
+  };
+
+  const apply = (item) => ({
+    ...merge(isObj(item) ? item : {}, defaults),
+    _mapped: true,
+  });
+
+  return Array.isArray(n8nMapped) ? n8nMapped.map(apply) : apply(n8nMapped);
+}
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -102,9 +143,9 @@ export default function App() {
       return;
     }
 
-    // OPERATION / test_agent mails: no n8n call here.
+    // OPERATION / test_agent / nnr_export mails: no n8n call here.
     // Extraction happens only after a customer is clicked.
-    if (["OPERATION", "test_agent"].includes(email.mailboxId)) {
+    if (["OPERATION", "test_agent", "nnr_export"].includes(email.mailboxId)) {
       if (activeRequest.current === email.id) setBusy(false);
       return;
     }
@@ -136,6 +177,10 @@ export default function App() {
   };
 
   const handleCustomerSelect = async ({ customer, login, email }) => {
+    if (!login) {
+      alert(`No login mapped for ${customer}`);
+      return;
+    }
     activeRequest.current = email.id;
     setActiveCustomer(customer);
     setCustomerLogin(login);
@@ -149,8 +194,9 @@ export default function App() {
     }));
     setModuleType("out");
 
-    // Not ALLIANCE MOVERS: login only, no extraction
-    if (!EXTRACT_CUSTOMERS.includes(customer.trim().toUpperCase())) {
+    // Customers without a flow: login only, no extraction
+    const flow = CUSTOMER_FLOWS[customer.trim().toUpperCase()];
+    if (!flow) {
       setRawDeclaration(null);
       setBusy(false);
       return;
@@ -167,7 +213,7 @@ export default function App() {
     // Defaults must apply even if the mail is empty or parsing fails
     let extracted = {};
     try {
-      extracted = mailText ? parseAllianceMail(mailText) : {};
+      extracted = mailText ? flow.parse(mailText) : {};
       console.log("extracted:", extracted);
       if (extracted.conflicts?.length)
         console.warn("Mail has two different values for:", extracted.conflicts);
@@ -175,10 +221,43 @@ export default function App() {
       console.error("Parse failed:", err.message);
     }
 
-    const mapped = mapAllianceMail(extracted);
+    const mapped = flow.map(extracted);
     console.log("[app] mapped:", mapped);
-    setRawDeclaration(mapped);
-    setBusy(false);
+    setRawDeclaration(mapped); // defaults appear immediately
+
+    if (!flow.n8n) {
+      setBusy(false);
+      return;
+    }
+
+    // Then fetch the item details from n8n and merge them under the defaults
+    setBusy(true);
+    try {
+      const n8nResult = await notifyN8n(email.id);
+      if (activeRequest.current !== email.id) return;
+      console.log("n8n raw response:", n8nResult);
+
+      const raw = n8nResult?.n8n_response || null;
+      if (raw) {
+        const n8nMapped = mapResponse("out", raw);
+        console.log("[app] n8n mapped:", n8nMapped);
+        const merged = mergeDefaults(n8nMapped, mapped);
+        console.log("[app] merged:", merged);
+        setRawDeclaration(merged);
+      }
+    } catch (err) {
+      if (activeRequest.current !== email.id) return;
+      if (err.response?.data?.code !== "NO_PDF") {
+        console.error(
+          "n8n extraction failed:",
+          err.message,
+          "| status:", err.response?.status,
+          "| body:", err.response?.data,
+        );
+      }
+    } finally {
+      if (activeRequest.current === email.id) setBusy(false);
+    }
   };
 
   const removeFromList = (id) =>

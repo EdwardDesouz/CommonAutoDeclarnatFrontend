@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { CUSTOMER_LOGIN_MAP as OPERATION_CUSTOMERS } from "../helpers/operationMail";
 import { CUSTOMER_LOGIN_MAP as TEST_AGENT_CUSTOMERS } from "../helpers/testAgentMail";
+import { NNR_CUSTOMER_LOGIN_MAP as NNR_CUSTOMERS } from "../helpers/nnrMail";
 
 const CUSTOMER_MAPS = {
   OPERATION: OPERATION_CUSTOMERS,
   test_agent: TEST_AGENT_CUSTOMERS,
+  nnr_export: NNR_CUSTOMERS,
 };
 
 function timeAgo(dateStr) {

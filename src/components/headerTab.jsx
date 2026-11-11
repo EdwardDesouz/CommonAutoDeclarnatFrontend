@@ -689,6 +689,36 @@ export default function HeaderTabContent({
     runSideEffects({ specKey: spec.key, value, data, moduleConfig, onEdit });
   };
 
+  const inwardModeVal = readSpecValue(data, "InwardTransportMode", moduleConfig);
+  const outwardModeVal = readSpecValue(data, "OutwardTransportMode", moduleConfig);
+  const packTypeVal = readSpecValue(data, "CargoPackType", moduleConfig);
+
+  useEffect(() => {
+    const patches = [];
+    if (inwardModeVal) {
+      patches.push(
+        getInwardModeChangePatch(moduleKey, inwardModeVal, packTypeVal),
+      );
+    }
+    if (outwardModeVal) {
+      patches.push(
+        getOutwardModeChangePatch(moduleKey, outwardModeVal, packTypeVal),
+      );
+    }
+
+    patches.forEach((patch) => {
+      Object.entries(patch.set || {}).forEach(([id, value]) => {
+        const spec = specForPatchId(id);
+        if (!spec) return;
+        const key = findRowKey(data, spec.aliases);
+        const current = key ? data[key] : "";
+        if (current === "" || current == null) {
+          onEdit([key || spec.key], value);
+        }
+      });
+    });
+  }, [inwardModeVal, outwardModeVal, packTypeVal]);
+
   return (
     <div
       style={{

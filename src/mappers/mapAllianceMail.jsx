@@ -82,7 +82,7 @@ export function mapAllianceMail(x = {}) {
 
       Containers: isContainerised ? containers : undefined,
 
-      // ---- Invoice form (Currency + Amount from mail) ----
+      // ---- Invoice form (Currency + Amount from mail) ---- 
       invoice:
         x.currency || x.value
           ? {

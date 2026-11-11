@@ -47,9 +47,9 @@ export async function handleCustomerClick({
     throw new Error(`No login mapped for customer "${customer}"`);
   }
 
-  await switchLogin(login); // e.g. { touchUsername: "ALLIANCE02", accountId: "KAIZEN" }
-  await triggerOut(email); // the existing Out button action
+  await switchLogin(login); 
+  await triggerOut(email); 
 
-  // Inject the first job; the rest can be selected from the UI.
+
   if (jobs?.length) injectJob(jobs[0], setFormValues);
 }

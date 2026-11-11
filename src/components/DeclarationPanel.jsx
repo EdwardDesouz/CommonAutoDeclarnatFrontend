@@ -2301,7 +2301,7 @@ export default function DeclarationPanel({
     if (!email || !moduleConfig) return;
     if (!touchUser) {
       alert(
-        "This email's mailbox username could not be resolved — cannot generate a Permit ID.",
+        "Please Select Customer — cannot generate a Permit ID.",
       );
       return;
     }
