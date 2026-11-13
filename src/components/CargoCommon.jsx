@@ -1411,7 +1411,9 @@ export default function CargoTabContent({
   const hawbKeyExists = !!findRowKey(data, S.hawb.aliases);
   const hawb = hawbKeyExists
     ? cargoGetScalar(data, S.hawb.aliases)
-    : consignmentNo || "";
+    : moduleKey === "OUTDEC"
+      ? ""
+      : consignmentNo || "";
   const hawbPath = cargoScalarPath(data, S.hawb.aliases, S.hawb.key);
 
   const permitIdKey = findRowKey(data, ["permitid"]);
@@ -1596,7 +1598,13 @@ export default function CargoTabContent({
         {rules.showInward && (
           <CargoSectionCard title="INWARD DETAILS">
             {/* read-only: the mode is chosen in the Header tab */}
-            <CargoTextRow label="Mode" value={inwardMode} disabled />
+            {moduleKey === "OUTDEC" && (
+              <CargoTextRow
+                label="Inward HAWB"
+                value={hawb}
+                onChange={(v) => onEdit(hawbPath, v)}
+              />
+            )}
 
             {!inwardNotRequired &&
               scalar("arrivalDate", {

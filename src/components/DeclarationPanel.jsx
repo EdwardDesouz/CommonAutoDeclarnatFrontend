@@ -2113,26 +2113,32 @@ export default function DeclarationPanel({
   console.log("[panel] mapped:", mappedDeclaration);
 
   // 2. Then the builders
-  const buildData = (raw) =>
-    seedHawbDefault(
-      seedTotalGrossWeightDefault(
-        seedCargoUnitDefaults(
-          seedHeaderDefaults(
-            deepUpperCaseTopLevelExcept(
-              raw ?? blankDeclaration(),
-              HEADER_SELECT_KEYS,
-            ),
-          ),
+const buildData = (raw) => {
+  const seeded = seedTotalGrossWeightDefault(
+    seedCargoUnitDefaults(
+      seedHeaderDefaults(
+        deepUpperCaseTopLevelExcept(
+          raw ?? blankDeclaration(),
+          HEADER_SELECT_KEYS,
         ),
       ),
-    );
+    ),
+  );
+  // Out module: consignment no -> Hawb auto-fill vendaam
+  return activeModule === "out" ? seeded : seedHawbDefault(seeded);
+};
 
-  const buildAll = (raw) => {
-    const rawList = normalizeDeclarations(raw);
-    return rawList.map((r) =>
-      buildData({ ...blankDeclaration(), ...(r || {}) }),
-    );
-  };
+const buildAll = (raw) => {
+  const rawList = normalizeDeclarations(raw);
+  return rawList.map((r) => {
+    const base = { ...blankDeclaration(), ...(r || {}) };
+    if (activeModule === "out") {
+      const k = findRowKey(base, CARGO_FIELD_SPECS.hawb.aliases);
+      if (k) base[k] = ""; // n8n/mapper la vandha inward HAWB ah remove
+    }
+    return buildData(base);
+  });
+};
 
   // 3. Then the state that uses them
   const [dataList, setDataList] = useState(() => buildAll(mappedDeclaration));

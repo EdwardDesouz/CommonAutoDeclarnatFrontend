@@ -31,7 +31,23 @@ const CUSTOMER_FLOWS = {
   "YAMAHA": { parse: parseGeMail, map: mapNnrYamahaMail, n8n: true },
 };
 
+const DEFAULT_MODULE = { nnr_export: "out" };
+
+const NNR_AIR_MAILBOX = "nnr_air_exp@ktt.sg";
+
+const NNR_AIR_DEFAULTS = {
+  _mapped: true,
+  OutwardTransportMode: "4 : Air",
+  DeclarationType: "DRT : DIRECT (INCLUDING STORAGE IN FTZ)",
+  CargoPackType: "5 : Other non-Containerized",
+};
+
+const isNnrAir = (email) =>
+  (email?.mailbox_username || email?.mailboxUsername || "").toLowerCase() ===
+  NNR_AIR_MAILBOX || email?.mailbox_id === "nnr_export";
+
 const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
+
 
 // Defaults win wherever they have a value. Fields the defaults leave blank
 // (or don't mention) are filled from the n8n response.
@@ -75,6 +91,9 @@ export default function App() {
   const [activeCustomer, setActiveCustomer] = useState(null);
   const [customerLogin, setCustomerLogin] = useState(null);
   const activeRequest = useRef(null);
+  const n8nRaw = useRef(null);
+  const n8nPending = useRef(false);
+  const customerDefaults = useRef(null);
 
   // Memoized so the panel's form state is not reset on every render
   const declaration = useMemo(
@@ -104,6 +123,9 @@ export default function App() {
 
   const resetSelection = () => {
     activeRequest.current = null;
+    n8nRaw.current = null;
+    n8nPending.current = false;
+    customerDefaults.current = null;
     setSelectedEmail(null);
     setAttachments([]);
     setRawDeclaration(null);
@@ -113,8 +135,20 @@ export default function App() {
     setBusy(false);
   };
 
+  useEffect(() => {
+    if (loading || !selectedEmail) return;
+    const stillThere = accounts.some((a) =>
+      a.emails.some((e) => e.id === selectedEmail.id),
+    );
+    if (!stillThere) resetSelection();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accounts]);
+
   const handleSelect = async (email) => {
     activeRequest.current = email.id;
+    n8nRaw.current = null;
+    n8nPending.current = false;
+    customerDefaults.current = null;
     setAttachments([]);
     setRawDeclaration(null);
     setModuleType(null);
@@ -122,7 +156,12 @@ export default function App() {
     setCustomerLogin(null);
     setBusy(true);
 
+    console.log("mailbox_id:", email.mailbox_id, "user:", email.mailbox_username);
     let mod = email.module_type || null;
+    if (isNnrAir(email)) {
+      customerDefaults.current = NNR_AIR_DEFAULTS;
+      setRawDeclaration(NNR_AIR_DEFAULTS);
+    }
 
     try {
       const [detail, attData] = await Promise.all([
@@ -130,7 +169,8 @@ export default function App() {
         fetchAttachments(email.id),
       ]);
       if (activeRequest.current !== email.id) return;
-      mod = detail.module_type || mod;
+      // mod = detail.module_type || mod;
+      mod = detail.module_type || mod || DEFAULT_MODULE[email.mailbox_id] || null;
       setModuleType(mod);
       setSelectedEmail({ ...email, ...detail, body_preview: detail.body });
       setAttachments(attData.attachments || attData || []);
@@ -145,11 +185,13 @@ export default function App() {
 
     // OPERATION / test_agent / nnr_export mails: no n8n call here.
     // Extraction happens only after a customer is clicked.
-    if (["OPERATION", "test_agent", "nnr_export"].includes(email.mailboxId)) {
+    // if (["OPERATION", "test_agent", "nnr_export"].includes(email.mailboxId)) {
+    if (["OPERATION", "test_agent"].includes(email.mailbox_id)) {
       if (activeRequest.current === email.id) setBusy(false);
       return;
     }
 
+    n8nPending.current = true;
     try {
       const n8nResult = await notifyN8n(email.id);
       if (activeRequest.current !== email.id) return;
@@ -159,7 +201,17 @@ export default function App() {
       const warn = moduleMismatch(mod, raw);
       if (warn) console.warn(warn);
 
-      setRawDeclaration(raw);
+      n8nRaw.current = raw;
+
+      if (customerDefaults.current && raw) {
+        // customer munnadiye click pannirundha: defaults ah overwrite pannama merge
+        setRawDeclaration(
+          mergeDefaults(mapResponse("out", raw), customerDefaults.current),
+        );
+
+      } else {
+        setRawDeclaration(raw || customerDefaults.current);
+      }
     } catch (err) {
       if (activeRequest.current !== email.id) return;
       if (err.response?.data?.code !== "NO_PDF") {
@@ -170,8 +222,9 @@ export default function App() {
           "| body:", err.response?.data,
         );
       }
-      setRawDeclaration(null);
+      if (!customerDefaults.current) setRawDeclaration(null);
     } finally {
+      n8nPending.current = false;
       if (activeRequest.current === email.id) setBusy(false);
     }
   };
@@ -197,8 +250,12 @@ export default function App() {
     // Customers without a flow: login only, no extraction
     const flow = CUSTOMER_FLOWS[customer.trim().toUpperCase()];
     if (!flow) {
-      setRawDeclaration(null);
-      setBusy(false);
+      setRawDeclaration(
+        n8nRaw.current
+          ? mergeDefaults(mapResponse("out", n8nRaw.current), customerDefaults.current || {})
+          : customerDefaults.current,
+      );
+      if (!n8nPending.current) setBusy(false);
       return;
     }
 
@@ -223,41 +280,20 @@ export default function App() {
 
     const mapped = flow.map(extracted);
     console.log("[app] mapped:", mapped);
-    setRawDeclaration(mapped); // defaults appear immediately
 
-    if (!flow.n8n) {
-      setBusy(false);
-      return;
+    const base = isNnrAir(selectedEmail || email) ? NNR_AIR_DEFAULTS : {};
+    const combined = mergeDefaults(base, mapped);
+    customerDefaults.current = combined;
+
+    if (n8nRaw.current) {
+      setRawDeclaration(
+        mergeDefaults(mapResponse("out", n8nRaw.current), combined),
+      );
+    } else {
+      setRawDeclaration(combined);
     }
 
-    // Then fetch the item details from n8n and merge them under the defaults
-    setBusy(true);
-    try {
-      const n8nResult = await notifyN8n(email.id);
-      if (activeRequest.current !== email.id) return;
-      console.log("n8n raw response:", n8nResult);
-
-      const raw = n8nResult?.n8n_response || null;
-      if (raw) {
-        const n8nMapped = mapResponse("out", raw);
-        console.log("[app] n8n mapped:", n8nMapped);
-        const merged = mergeDefaults(n8nMapped, mapped);
-        console.log("[app] merged:", merged);
-        setRawDeclaration(merged);
-      }
-    } catch (err) {
-      if (activeRequest.current !== email.id) return;
-      if (err.response?.data?.code !== "NO_PDF") {
-        console.error(
-          "n8n extraction failed:",
-          err.message,
-          "| status:", err.response?.status,
-          "| body:", err.response?.data,
-        );
-      }
-    } finally {
-      if (activeRequest.current === email.id) setBusy(false);
-    }
+    if (!n8nPending.current) setBusy(false);
   };
 
   const removeFromList = (id) =>

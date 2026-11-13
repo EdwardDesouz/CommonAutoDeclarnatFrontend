@@ -866,7 +866,7 @@ export function buildOutHeaderPayload(data, ids, touchUser) {
     DepartureTime: data.DepartureTime || "",
     RepLocName: data.ReceiptLocation?.Name || "",
     CertificateNumber: data.CertificateNumber || "",
-   Defrentprinting: capFlag(data.Defrentprinting),
+    Defrentprinting: capFlag(data.Defrentprinting),
     CondColor: data.CondColor || "",
     TransmitId: data.TransmitId || "",
 
@@ -880,7 +880,7 @@ export function buildOutHeaderPayload(data, ids, touchUser) {
     OutOceanBillofLadingNo: data.OutObl || "",
     VesselType: data.VesselType || "",
     VesselNetRegTon: data.VesselNetRegisterTonnage || "",
- VesselNationality: data.VesselNationality || "--Select--",
+    VesselNationality: data.VesselNationality || "--Select--",
     TowingVesselID: data.TowingVesselId || "",
     TowingVesselName: data.TowingVesselName || "",
     NextPort: data.NextPortCode || "",
@@ -937,7 +937,7 @@ export function buildOutHeaderPayload(data, ids, touchUser) {
     TouchTime: new Date().toISOString(),
     PermitNumber: permitNumber,
     prmtStatus: data.prmtStatus || data.PrmtStatus || ids?.prmtStatus || "NEW",
-  Cnb: capFlag(data.cpc?.CNB?.on),
+    Cnb: capFlag(data.cpc?.CNB?.on),
     DeclareIndicator: flag(data.DeclarationChecked),
     DeclarningFor: data.DeclaringFor || data.DeclFor || "--Select--",
     MRDate: toApiDate(data.MRDate),
@@ -2096,7 +2096,7 @@ export function SummaryTabContent({
           readOnly
           wide
         />
-        <SummaryInputBox label="HAWB/HBL" value={data.Hawb} readOnly wide />
+        <SummaryInputBox label="HAWB/HBL" value={isOut ? data.OutHawb : data.Hawb} readOnly wide />
         <SummaryInputBox label="MAWB/OBL" value={data.Mawb} readOnly wide />
         <SummaryInputBox
           label="GROSS WEIGHT"
