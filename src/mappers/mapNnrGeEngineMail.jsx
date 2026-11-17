@@ -24,6 +24,19 @@ const GE_PARTIES = {
     Name: "NNR GLOBAL LOGISTICS (S) PTE LTD",
     Name1: "",
   },
+  Consignee: {
+    Code: "-",
+    CRUEI: "-",
+    Name: "-",
+    Name1: "-",
+    Address: "-",
+    Address1: "-",
+    City: "-",
+    SubCode: "-",
+    Sub: "-",
+    Postal: "560063",
+    Country: "SG",
+  },
 };
 
 const compact = (o) =>

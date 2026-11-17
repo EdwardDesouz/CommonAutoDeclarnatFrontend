@@ -19,6 +19,7 @@ import { mapNnrGeMaterialsMail } from "./mappers/mapNnrGeMaterials";
 import { mapNnrZebraTechMail } from "./mappers/mapNnrZebraTech";
 import { mapNnrYamahaMail } from "./mappers/mapNnrYamaha";
 
+
 // Placeholder until a real GE mail parser exists: returns no fields, so only
 // the defaults from the mapper apply.
 const parseGeMail = () => ({});

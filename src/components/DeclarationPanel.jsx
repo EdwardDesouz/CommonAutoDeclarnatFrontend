@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { FaSearch, FaPlus } from "react-icons/fa";
+import { FaSearch, FaPlus, FaSpinner, FaFilePdf } from "react-icons/fa";
 import StatusStamp from "./StatusStamp";
 import API from "../api/api";
 import ItemsTabContent from "./item/Index";
@@ -1685,6 +1685,45 @@ function ModuleCheckboxBar({ activeModule, onChange, locked }) {
   );
 }
 
+const PROCESSING_STEPS = [
+  { after: 0, text: "Reading PDF…" },
+  { after: 5, text: "Extracting shipper & receiver details…" },
+  { after: 12, text: "Extracting invoice & item lines…" },
+  { after: 22, text: "Mapping fields to the declaration…" },
+  { after: 35, text: "Almost done, finalising…" },
+];
+
+function ProcessingBanner() {
+  const [sec, setSec] = useState(0);
+
+  useEffect(() => {
+    const t = setInterval(() => setSec((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const step = [...PROCESSING_STEPS].reverse().find((s) => sec >= s.after);
+
+  return (
+    <div className="decl-processing" role="status" aria-live="polite">
+      <div className="decl-processing-icon">
+        <FaFilePdf className="decl-processing-pdf" />
+        <FaSpinner className="decl-processing-spin" />
+      </div>
+
+      <div className="decl-processing-body">
+        <div className="decl-processing-title">
+          Extracting data from PDF
+          <span className="decl-processing-time">{sec}s</span>
+        </div>
+        <small>{step.text}</small>
+        <div className="decl-processing-bar">
+          <span />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DeclarationPageBar({
   dataList,
   activeIndex,
@@ -2113,32 +2152,32 @@ export default function DeclarationPanel({
   console.log("[panel] mapped:", mappedDeclaration);
 
   // 2. Then the builders
-const buildData = (raw) => {
-  const seeded = seedTotalGrossWeightDefault(
-    seedCargoUnitDefaults(
-      seedHeaderDefaults(
-        deepUpperCaseTopLevelExcept(
-          raw ?? blankDeclaration(),
-          HEADER_SELECT_KEYS,
+  const buildData = (raw) => {
+    const seeded = seedTotalGrossWeightDefault(
+      seedCargoUnitDefaults(
+        seedHeaderDefaults(
+          deepUpperCaseTopLevelExcept(
+            raw ?? blankDeclaration(),
+            HEADER_SELECT_KEYS,
+          ),
         ),
       ),
-    ),
-  );
-  // Out module: consignment no -> Hawb auto-fill vendaam
-  return activeModule === "out" ? seeded : seedHawbDefault(seeded);
-};
+    );
+    // Out module: consignment no -> Hawb auto-fill vendaam
+    return activeModule === "out" ? seeded : seedHawbDefault(seeded);
+  };
 
-const buildAll = (raw) => {
-  const rawList = normalizeDeclarations(raw);
-  return rawList.map((r) => {
-    const base = { ...blankDeclaration(), ...(r || {}) };
-    if (activeModule === "out") {
-      const k = findRowKey(base, CARGO_FIELD_SPECS.hawb.aliases);
-      if (k) base[k] = ""; // n8n/mapper la vandha inward HAWB ah remove
-    }
-    return buildData(base);
-  });
-};
+  const buildAll = (raw) => {
+    const rawList = normalizeDeclarations(raw);
+    return rawList.map((r) => {
+      const base = { ...blankDeclaration(), ...(r || {}) };
+      if (activeModule === "out") {
+        const k = findRowKey(base, CARGO_FIELD_SPECS.hawb.aliases);
+        if (k) base[k] = ""; // n8n/mapper la vandha inward HAWB ah remove
+      }
+      return buildData(base);
+    });
+  };
 
   // 3. Then the state that uses them
   const [dataList, setDataList] = useState(() => buildAll(mappedDeclaration));
@@ -2501,7 +2540,7 @@ const buildAll = (raw) => {
           onChange={setActiveModule}
           locked={moduleLocked}
         />
-
+        {busy && email && <ProcessingBanner />}
         {hasMultiple && !needsModeChoice && (
           <DeclarationPageBar
             dataList={dataList}
@@ -2511,7 +2550,10 @@ const buildAll = (raw) => {
           />
         )}
 
-        <div className="decl-body">
+        <div
+          className="decl-body"
+          style={busy ? { opacity: 0.5, pointerEvents: "none" } : undefined}
+        >
           {needsModeChoice ? (
             <div
               style={{
@@ -2612,7 +2654,7 @@ const buildAll = (raw) => {
               </div>
               <button
                 className="decl-button decl-button-verdigris"
-                disabled={generatingNew || !email}
+                disabled={generatingNew || !email || busy}
                 onClick={() => handleNewPermit(pageIndex)}
               >
                 {generatingNew ? "Generating…" : "New"}

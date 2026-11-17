@@ -2,8 +2,9 @@ import axios from "axios";
 
 const api = axios.create({
   // baseURL: "http://localhost:4001/api",
+  baseURL: "http://localhost:4002/api",
   //  baseURL: 'http://192.168.1.40:4001/api',
-      baseURL: 'http://192.168.1.40:4002/api',
+      // baseURL: 'http://192.168.1.40:4002/api',
   timeout: 30000,
 });
 
@@ -22,8 +23,15 @@ export async function fetchAttachments(id) {
   return res.data;
 }
 
+// export async function notifyN8n(id) {
+//   const res = await api.post(`/email/${id}/notify-n8n`, null, {
+//     timeout: 330000,
+//   });
+//   return res.data;
+// }
+
 export async function notifyN8n(id) {
-  const res = await api.post(`/email/${id}/notify-n8n`, null, {
+  const res = await api.post(`/email/${id}/notify-n8n?force=true`, null, {
     timeout: 330000,
   });
   return res.data;
